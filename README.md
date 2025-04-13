@@ -79,8 +79,8 @@ For more details about the continual learning methods, see [src/llamafactory/cl/
 
 ```bash
 git clone https://github.com/ECNU-ICALK/EasyCL.git
-cd LLaMA-Factory
-pip install -e ".[torch,metrics]"
+cd EazyCL
+pip install -e .
 ```
 Note that if you already have LLaMA-Factory installed in your environment, you may need to uninstall the existing one and perform the installation again.
 
