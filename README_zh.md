@@ -76,7 +76,7 @@ EasyCL 是 LLaMA Factory 框架的扩展，专注于大型语言模型的持续�
 ```bash
 git clone https://github.com/ECNU-ICALK/EasyCL.git
 cd EasyCL
-pip install -e ".[torch,metrics]"
+pip install -e . --no-deps
 ```
 注意，如果你现在环境下已经安装了LLaMA-Factory或旧版EasyCL，你可能需要卸载现有的然后在重新执行一次安装。
 

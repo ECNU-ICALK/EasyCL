@@ -80,7 +80,7 @@ For more details about the continual learning methods, see [src/llamafactory/cl/
 ```bash
 git clone https://github.com/ECNU-ICALK/EasyCL.git
 cd LLaMA-Factory
-pip install -e ".[torch,metrics]"
+pip install -e . --no-deps
 ```
 Note that if you already have LLaMA-Factory installed in your environment, you may need to uninstall the existing one and perform the installation again.
 
@@ -90,7 +90,7 @@ Note that if you already have LLaMA-Factory installed in your environment, you m
 ### Train Only
 
 ```bash
-llamafactory-cli cl_workflow --mode train_only --train_params ./configs/train_config.json
+easycl-cli cl_workflow --mode train_only --train_params ./configs/train_config.json
 ```
 
 **Preview Result**: Executes training commands sequentially for tasks defined in `train_config_ewc.json`, applying parameter management between tasks.
@@ -98,7 +98,7 @@ llamafactory-cli cl_workflow --mode train_only --train_params ./configs/train_co
 ### Evaluate Only
 
 ```bash
-llamafactory-cli cl_workflow --mode eval_only --eval_params ./configs/eval_config.json
+easycl-cli cl_workflow --mode eval_only --eval_params ./configs/eval_config.json
 ```
 
 **Preview Result**: Executes evaluation command(s) specified in `eval_config.json` (e.g., evaluating a specific fine-tuned model on `cl_tasks`).
@@ -106,7 +106,7 @@ llamafactory-cli cl_workflow --mode eval_only --eval_params ./configs/eval_confi
 ### Train Then Evaluate
 
 ```bash
-llamafactory-cli cl_workflow --mode train_then_eval \
+easycl-cli cl_workflow --mode train_then_eval \
     --train_params ./configs/train_config_replay.json \
     --eval_params ./configs/eval_config.json
 ```
@@ -116,7 +116,7 @@ llamafactory-cli cl_workflow --mode train_then_eval \
 ### Full Workflow (Train, Evaluate, Calculate Metrics)
 
 ```bash
-llamafactory-cli cl_workflow --mode full_workflow \
+easycl-cli cl_workflow --mode full_workflow \
     --train_params ./configs/train_config.json \
     --eval_params ./configs/eval_config.json
 ```
