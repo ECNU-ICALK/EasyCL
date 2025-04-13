@@ -40,8 +40,8 @@ _INFER_ARGS = [ModelArguments, DataArguments, FinetuningArguments, GeneratingArg
 _INFER_CLS = Tuple[ModelArguments, DataArguments, FinetuningArguments, GeneratingArguments]
 _EVAL_ARGS = [ModelArguments, DataArguments, EvaluationArguments, FinetuningArguments]
 _EVAL_CLS = Tuple[ModelArguments, DataArguments, EvaluationArguments, FinetuningArguments]
-_CL_EVAL_ARGS = [ModelArguments, DataArguments, CLEvaluationArguments, FinetuningArguments]
-_CL_EVAL_CLS = Tuple[ModelArguments, DataArguments, CLEvaluationArguments, FinetuningArguments]
+_CL_EVAL_ARGS = [ModelArguments, DataArguments, CLEvaluationArguments, FinetuningArguments, CLFinetuningArguments]
+_CL_EVAL_CLS = Tuple[ModelArguments, DataArguments, CLEvaluationArguments, FinetuningArguments, CLFinetuningArguments]
 
 
 def read_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> Union[Dict[str, Any], List[str]]:
@@ -188,7 +188,7 @@ def _parse_cl_eval_args(args: Optional[Union[Dict[str, Any], List[str]]] = None)
     """
     Parse continual learning evaluation arguments.
     """
-    parser = HfArgumentParser([ModelArguments, DataArguments, CLEvaluationArguments, FinetuningArguments])
+    parser = HfArgumentParser([ModelArguments, DataArguments, CLEvaluationArguments, FinetuningArguments, CLFinetuningArguments])
     allow_extra_keys = is_env_enabled("ALLOW_EXTRA_ARGS")
     return _parse_args(parser, args, allow_extra_keys=True)  # 允许额外的参数
 
@@ -253,7 +253,7 @@ def get_eval_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> _E
 
 
 def get_cl_eval_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> _CL_EVAL_CLS:
-    model_args, data_args, cl_eval_args, finetuning_args = _parse_cl_eval_args(args)
+    model_args, data_args, cl_eval_args, finetuning_args, cl_finetuning_args = _parse_cl_eval_args(args)
 
     _set_transformers_logging()
 
@@ -267,4 +267,4 @@ def get_cl_eval_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) ->
 
     transformers.set_seed(cl_eval_args.seed)
 
-    return model_args, data_args, cl_eval_args, finetuning_args
+    return model_args, data_args, cl_eval_args, finetuning_args, cl_finetuning_args

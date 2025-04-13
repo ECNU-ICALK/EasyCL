@@ -28,9 +28,9 @@ from llamafactory.model import load_tokenizer
 from llamafactory.train.trainer_utils import create_modelcard_and_push
 from llamafactory.train.sft.metric import ComputeAccuracy, ComputeSimilarity, eval_logit_processor
 
-# Import CLIT-MoE specific components
-from .clitmoe_loader import load_clitmoe_model # Changed from llamafactory.cl.clmoe...
-from .clitmoe_trainer import CLITMoETrainer # Changed from llamafactory.cl.clmoe...
+# Import CL-MoE specific components
+from .clmoe_loader import load_clmoe_model # Changed from llamafactory.cl.clmoe...
+from .clmoe_trainer import CLMoETrainer # Changed from llamafactory.cl.clmoe...
 from .peft.tuners.clitmoelora import CLMoEMOELoraLinear # Changed from llamafactory.cl.clmoe...
 
 if TYPE_CHECKING:
@@ -218,7 +218,7 @@ def run_parameter_alignment(output_dir: str, current_task_id: str, prev_task_id:
         raise ValueError(f"Error during parameter alignment: {e}")
 
 
-def run_sft_clitmoe( # Renamed from run_sft_moelora
+def run_sft_clmoe( # Renamed from run_sft_moelora
     model_args: "ModelArguments",
     data_args: "DataArguments",
     training_args: "Seq2SeqTrainingArguments",
@@ -228,10 +228,10 @@ def run_sft_clitmoe( # Renamed from run_sft_moelora
     callbacks: Optional[List["TrainerCallback"]] = None,
 ):
     """
-    Run supervised fine-tuning with CLIT-MoE adapters.
+    Run supervised fine-tuning with CL-MoE adapters.
     
     This workflow is similar to the standard SFT workflow, but uses the 
-    CLIT-MoE specific loader and trainer.
+    CL-MoE specific loader and trainer.
     """
     # --- Moved: Write task.txt at the beginning if training --- 
     if training_args.do_train:
@@ -266,15 +266,15 @@ def run_sft_clitmoe( # Renamed from run_sft_moelora
                 raise ValueError(f"Failed to write task.txt to {task_file_path} before training: {e}")
         else:
             # Raise an error if current_task_id is crucial and missing during training
-            raise ValueError("cl_finetuning_args.current_task_id is required for CLIT-MoE training but is not defined or empty.")
+            raise ValueError("cl_finetuning_args.current_task_id is required for cl-MoE training but is not defined or empty.")
     # --- End Moved block --- 
     
-    # Validate CLIT-MoE configuration
-    if cl_finetuning_args.use_clit_moe:
+    # Validate cl-MoE configuration
+    if cl_finetuning_args.use_cl_moe:
         if cl_finetuning_args.expert_num is None or cl_finetuning_args.expert_num <= 1:
              # This should be caught by CLFinetuningArguments.__post_init__, but double-check
-            raise ValueError("expert_num must be greater than 1 for CLIT-MoE.")
-        logger.info_rank0("Running SFT with CLIT-MoE enabled.")
+            raise ValueError("expert_num must be greater than 1 for cl-MoE.")
+        logger.info_rank0("Running SFT with cl-MoE enabled.")
     elif cl_finetuning_args.use_moe:
          # Log if standard MoE-LoRA is used instead
          logger.info_rank0("Running SFT with standard MoE-LoRA enabled.")
@@ -286,7 +286,7 @@ def run_sft_clitmoe( # Renamed from run_sft_moelora
     tokenizer = tokenizer_module["tokenizer"]
     template = get_template_and_fix_tokenizer(tokenizer, data_args)
     # training_args.save_safetensors = False # Keep this behavior from original moelora_workflow? Or allow True?
-    # Consider if CLIT-MoE adapters are compatible with safetensors
+    # Consider if cl-MoE adapters are compatible with safetensors
     # Let's keep it False for now for consistency with the source
     training_args.save_safetensors = False 
     
@@ -300,8 +300,8 @@ def run_sft_clitmoe( # Renamed from run_sft_moelora
         **tokenizer_module
     )
     
-    # Load model using CLIT-MoE adapter loader
-    model = load_clitmoe_model( # Changed function call
+    # Load model using CL-MoE adapter loader
+    model = load_clmoe_model( # Changed function call
         tokenizer=tokenizer,
         model_args=model_args,
         finetuning_args=finetuning_args,
@@ -311,7 +311,7 @@ def run_sft_clitmoe( # Renamed from run_sft_moelora
     
     # For better serialization of quantized models during inference
     if getattr(model, "is_quantized", False) and not training_args.do_train:
-        # Check if this is needed/compatible with CLIT-MoE adapters
+        # Check if this is needed/compatible with CL-MoE adapters
         setattr(model, "_hf_peft_config_loaded", True) # Keep for now
 
     # Inject output_dir into CLMoEMOELoraLinear modules if training
@@ -358,8 +358,8 @@ def run_sft_clitmoe( # Renamed from run_sft_moelora
     gen_kwargs["pad_token_id"] = tokenizer.pad_token_id
     gen_kwargs["logits_processor"] = get_logits_processor()
     
-    # Initialize the CLIT-MoE trainer
-    trainer = CLITMoETrainer( # Changed class
+    # Initialize the cl-MoE trainer
+    trainer = CLMoETrainer( # Changed class
         model=model,
         args=training_args,
         finetuning_args=finetuning_args,
@@ -452,7 +452,7 @@ def run_sft_clitmoe( # Renamed from run_sft_moelora
         if trainer.is_world_process_zero() and finetuning_args.plot_loss:
             plot_loss(
                 training_args.output_dir, 
-                keys=["loss", "eval_loss", "eval_accuracy"] # Check if other metrics are relevant for CLIT-MoE
+                keys=["loss", "eval_loss", "eval_accuracy"] # Check if other metrics are relevant for cl-MoE
             )
     
     if training_args.predict_with_generate:
@@ -461,7 +461,7 @@ def run_sft_clitmoe( # Renamed from run_sft_moelora
     # Evaluation
     if training_args.do_eval:
         metrics = trainer.evaluate(metric_key_prefix="eval", **gen_kwargs)
-        # TODO: Add CLIT-MoE specific evaluation metrics if needed
+        # TODO: Add cl-MoE specific evaluation metrics if needed
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
     
@@ -476,7 +476,7 @@ def run_sft_clitmoe( # Renamed from run_sft_moelora
             metric_key_prefix="predict", 
             **gen_kwargs
         )
-        # TODO: Add CLIT-MoE specific prediction handling/metrics if needed
+        # TODO: Add cl-MoE specific prediction handling/metrics if needed
         trainer.log_metrics("predict", predict_results.metrics)
         trainer.save_metrics("predict", predict_results.metrics)
         trainer.save_predictions(

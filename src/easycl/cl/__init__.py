@@ -13,7 +13,7 @@ from easycl.cl.pseudo_replay import PseudoReplay, PseudoReplayTrainer, run_sft_p
 from easycl.cl.abscl import ABSCLTrainer, run_sft_abscl
 from easycl.cl.dynamic_conpet import run_sft_dynamic_conpet
 from easycl.cl.moe import run_sft_moelora
-from easycl.cl.clmoe import run_sft_clitmoe
+from easycl.cl.clmoe import run_sft_clmoe
 
 __all__ = [
     "CLMethod",
@@ -49,5 +49,5 @@ __all__ = [
     "run_sft_abscl",
     "run_sft_dynamic_conpet",
     "run_sft_moelora",
-    "run_sft_clitmoe"
+    "run_sft_clmoe"
 ]

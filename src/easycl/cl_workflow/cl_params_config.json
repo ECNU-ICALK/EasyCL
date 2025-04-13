@@ -5,7 +5,7 @@
     "description": "Registry of supported continual learning methods.",
       "methods": [
       "ewc", "lwf", "replay", "gem", "lamol", "olora", "ilora",
-      "ssr", "abscl", "moe", "clit_moe", "dynamic_conpet"
+      "ssr", "abscl", "moe", "cl_moe", "dynamic_conpet"
     ]
   },
 
@@ -83,7 +83,7 @@
       "needs_replay_list": false,
       "needs_adapter_name_or_path": true
     },
-    "clit_moe": {
+    "cl_moe": {
       "needs_task_id": true,
       "needs_prev_model": true,
       "needs_prev_data": false,
@@ -145,12 +145,12 @@
         }
       ]
     },
-    "clit_moe": {
+    "cl_moe": {
       "params": [
         {
           "param_name": "previous_task_model",
           "related_to": "output_dir",
-          "description": "Path to the previous task's model for CLIT-MoE." 
+          "description": "Path to the previous task's model for cl-MoE." 
         }
       ]
     },

@@ -1,5 +1,7 @@
-<!-- Logo (placeholder for future) -->
-<!-- ![LLaMA Factory](assets/logo.png) -->
+<!-- Logo -->
+<p align="center">
+  <img src="assets/logo.jpg" alt="EasyCL Logo" style="width: 100%;" />
+</p>
 
 [ [English](README.md) | [中文](README_zh.md) ]
 

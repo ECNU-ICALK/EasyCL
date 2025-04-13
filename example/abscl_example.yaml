@@ -1,0 +1,58 @@
+### model
+model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora # ABSCL specifically works with LoRA or similar adapter methods
+lora_rank: 8
+lora_target: all
+
+### dataset
+dataset: identity,alpaca_en_demo # Replace with your current task dataset(s)
+template: llama3
+cutoff_len: 2048
+max_samples: 1000
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 4
+
+### output
+output_dir: saves/llama3-8b/lora/abscl_sft # Updated output directory for ABSCL
+logging_steps: 10
+save_steps: 500
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false # ABSCL likely saves both task-specific and shared adapters
+report_to: none  # choices: [none, wandb, tensorboard, swanlab, mlflow]
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 1.0e-4
+num_train_epochs: 3.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+
+### eval
+# eval_dataset: alpaca_en_demo
+# val_size: 0.1
+# per_device_eval_batch_size: 1
+# eval_strategy: steps
+# eval_steps: 500
+
+### Continual Learning Settings ###
+
+
+# ABSCL Specific Arguments
+use_abscl: true
+abscl_orthogonal_lambda: 0.1 # lambda_1
+abscl_shared_l2_lambda: 0.01 # lambda_2
+abscl_stats_path: abscl_stats # Path to save/load ABSCL statistics (means, covariance)
+adapters_save_path: adapters_abscl/{task_id} # Path to save adapters (shared and task-specific), {task_id} will be replaced
+# Note: ABSCL requires loading statistics and potentially adapter components from previous tasks.
+# Ensure abscl_stats_path points to the correct location containing previous task info. 

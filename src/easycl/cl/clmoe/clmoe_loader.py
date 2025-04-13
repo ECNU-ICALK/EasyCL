@@ -35,8 +35,8 @@ from llamafactory.model.model_utils.unsloth import load_unsloth_pretrained_model
 from llamafactory.model.model_utils.valuehead import load_valuehead_params
 from llamafactory.model.patcher import patch_config, patch_model, patch_processor, patch_tokenizer, patch_valuehead_model
 
-# Import the CLIT-MoE adapter
-from .clitmoe_adapter import init_clitmoe_adapter # Changed from llamafactory.cl.clmoe.clitmoe_adapter
+# Import the CL-MoE adapter
+from .clmoe_adapter import init_clmoe_adapter # Changed from llamafactory.cl.clmoe.clmoe_adapter
 
 if TYPE_CHECKING:
     from transformers import PretrainedConfig, PreTrainedModel, PreTrainedTokenizer, ProcessorMixin
@@ -118,7 +118,7 @@ def load_config(model_args: "ModelArguments") -> "PretrainedConfig":
     return AutoConfig.from_pretrained(model_args.model_name_or_path, **init_kwargs)
 
 
-def load_clitmoe_model( # Renamed from load_moelora_model
+def load_clmoe_model( # Renamed from load_moelora_model
     tokenizer: "PreTrainedTokenizer",
     model_args: "ModelArguments",
     finetuning_args: "FinetuningArguments",
@@ -127,9 +127,9 @@ def load_clitmoe_model( # Renamed from load_moelora_model
     add_valuehead: bool = False,
 ) -> "PreTrainedModel":
     r"""
-    Loads pretrained model with CLIT-MoE support.
+    Loads pretrained model with CL-MoE support.
     
-    Supports CLIT-MoE (and standard LoRA/Freeze/Full) training based on finetuning_args.
+    Supports CL-MoE (and standard LoRA/Freeze/Full) training based on finetuning_args.
     Note that the trainable parameters must be cast to float32.
     """
     init_kwargs = _get_init_kwargs(model_args)
@@ -138,12 +138,12 @@ def load_clitmoe_model( # Renamed from load_moelora_model
     apply_liger_kernel(config, model_args, is_trainable, require_logits=(finetuning_args.stage not in ["pt", "sft"]))
 
     model = None
-    lazy_load = False # Check if lazy loading needs adjustments for CLIT-MoE
+    lazy_load = False # Check if lazy loading needs adjustments for CLMoE
     if model_args.use_unsloth:
         if model_args.adapter_name_or_path is not None:
-             # Lazy loading with Unsloth and custom PEFT (CLIT-MoE) needs verification
-             if cl_finetuning_args.use_clit_moe:
-                 raise NotImplementedError("Lazy loading CLIT-MoE with Unsloth is not currently supported.")
+             # Lazy loading with Unsloth and custom PEFT (CLMoE) needs verification
+             if cl_finetuning_args.use_cl_moe:
+                 raise NotImplementedError("Lazy loading CL-MoE with Unsloth is not currently supported.")
              else:
                  lazy_load = True # Standard Unsloth lazy load
         elif is_trainable:
@@ -172,12 +172,12 @@ def load_clitmoe_model( # Renamed from load_moelora_model
             model = convert_pretrained_model_to_mod(model, config, model_args)
 
     if not lazy_load:
-        # Patching needs to be compatible with CLIT-MoE structure
+        # Patching needs to be compatible with CL-MoE structure
         patch_model(model, tokenizer, model_args, is_trainable, add_valuehead)
         register_autoclass(config, model, tokenizer)
 
-    # Initialize adapter using the CLIT-MoE specific function
-    model = init_clitmoe_adapter( # Changed function call
+    # Initialize adapter using the CL-MoE specific function
+    model = init_clmoe_adapter( # Changed function call
         config=config,
         model=model,
         model_args=model_args,
@@ -187,12 +187,12 @@ def load_clitmoe_model( # Renamed from load_moelora_model
     )
 
     if add_valuehead:
-        # Ensure ValueHead logic is compatible with the PEFT model structure (CLIT-MoE)
+        # Ensure ValueHead logic is compatible with the PEFT model structure (CL-MoE)
         model = AutoModelForCausalLMWithValueHead.from_pretrained(model)
         patch_valuehead_model(model)
 
         if model_args.adapter_name_or_path is not None:
-            # Determine the correct path for vhead params when using CLIT-MoE adapters
+            # Determine the correct path for vhead params when using CL-MoE adapters
             vhead_path = model_args.adapter_name_or_path[-1]
         else:
             vhead_path = model_args.model_name_or_path

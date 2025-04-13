@@ -55,10 +55,10 @@ class EvaluationArguments:
         metadata={"help": "是否启用MoE-LoRA权重进行评估 (仅在 eval_mode='single' 时生效)"}
     )
 
-    # CLIT-MoE 评估开关
-    use_clitmoe_eval: bool = field(
+    # cl-MoE 评估开关
+    use_clmoe_eval: bool = field(
         default=False,
-        metadata={"help": "是否启用CLIT-MoE权重进行评估 (仅在 eval_mode='single' 时生效)"}
+        metadata={"help": "是否启用cl-MoE权重进行评估 (仅在 eval_mode='single' 时生效)"}
     )
 
     # CLEval vLLM 使用开关 (moved from CLEvaluationArguments)

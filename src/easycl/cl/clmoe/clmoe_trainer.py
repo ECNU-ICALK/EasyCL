@@ -26,11 +26,11 @@ if TYPE_CHECKING:
 logger = logging.get_logger(__name__)
 
 
-class CLITMoETrainer(CustomSeq2SeqTrainer): # Renamed from MoELoRATrainer
+class CLMoETrainer(CustomSeq2SeqTrainer): # Renamed from MoELoRATrainer
     """
-    Trainer for CLIT-MoE models.
+    Trainer for CL-MoE models.
     
-    This trainer extends the CustomSeq2SeqTrainer to handle CLIT-MoE specific configurations.
+    This trainer extends the CustomSeq2SeqTrainer to handle CL-MoE specific configurations.
     """
 
     def __init__(
@@ -51,15 +51,15 @@ class CLITMoETrainer(CustomSeq2SeqTrainer): # Renamed from MoELoRATrainer
         # Store cl_finetuning_args
         self.cl_finetuning_args = cl_finetuning_args
         
-        # Get CLIT-MoE specific parameters from cl_finetuning_args
-        self.use_clit_moe = cl_finetuning_args.use_clit_moe
+        # Get CL-MoE specific parameters from cl_finetuning_args
+        self.use_cl_moe = cl_finetuning_args.use_cl_moe
         self.expert_num = cl_finetuning_args.expert_num
         self.task_embedding_dim = cl_finetuning_args.task_embedding_dim
         
-        # Log CLIT-MoE specific configuration if enabled
-        if self.use_clit_moe and self.expert_num is not None and self.expert_num > 1:
+        # Log CL-MoE specific configuration if enabled
+        if self.use_cl_moe and self.expert_num is not None and self.expert_num > 1:
             logger.info_rank0(
-                f"CLIT-MoE configuration: expert_num={self.expert_num}, "
+                f"CL-MoE configuration: expert_num={self.expert_num}, "
                 f"task_embedding_dim={self.task_embedding_dim}"
             )
         # Log standard MoE-LoRA config if that's used (though args check should prevent both)

@@ -1,11 +1,11 @@
 # src/llamafactory/cl/clmoe/__init__.py
 
-from .clitmoe_loader import load_clitmoe_model
-from .clitmoe_trainer import CLITMoETrainer
-from .clitmoe_workflow import run_sft_clitmoe
+from .clmoe_loader import load_clmoe_model
+from .clmoe_trainer import CLMoETrainer
+from .clmoe_workflow import run_sft_clmoe
 
 __all__ = [
-    "load_clitmoe_model",
-    "CLITMoETrainer",
-    "run_sft_clitmoe",
+    "load_clmoe_model",
+    "CLMoETrainer",
+    "run_sft_clmoe",
 ] 

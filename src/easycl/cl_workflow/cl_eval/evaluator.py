@@ -5,10 +5,12 @@ import os
 import torch
 import copy
 import gc
+import yaml
 from collections import defaultdict
 from typing import Dict, List, Optional, Any, Tuple, Union
 from tqdm import tqdm
 from transformers import HfArgumentParser
+from llamafactory.extras import logging
 
 from llamafactory.eval.evaluator import Evaluator as BaseEvaluator
 from llamafactory.hparams import GeneratingArguments
@@ -23,7 +25,9 @@ from .adapters import (
 )
 from easycl.hparams.parser import get_cl_eval_args
 from easycl.cl.moe.moelora_loader import load_moelora_model
-from easycl.cl.clmoe.clitmoe_loader import load_clitmoe_model
+from easycl.cl.clmoe.clmoe_loader import load_clmoe_model
+
+logger = logging.get_logger(__name__)
 
 if is_vllm_available():
     from vllm import LLM, SamplingParams
@@ -34,7 +38,7 @@ class CLEvalEvaluator(BaseEvaluator):
     
     def __init__(self, args: Optional[Dict[str, Any]] = None) -> None:
         """初始化持续学习评估器"""
-        self.model_args, self.data_args, self.eval_args, self.finetuning_args = get_cl_eval_args(args)
+        self.model_args, self.data_args, self.eval_args, self.finetuning_args, self.cl_finetuning_args = get_cl_eval_args(args)
         # Parse GeneratingArguments separately from the input args dict
         parser = HfArgumentParser(GeneratingArguments)
         # parse_dict returns only the dataclass instance when parsing a single type
@@ -80,39 +84,40 @@ class CLEvalEvaluator(BaseEvaluator):
         
         # 在非多adapter模式或需要基础模型进行推理时加载模型
         if not self.using_multi_adapter:
-            # Check if CLIT-MoE evaluation is enabled for single adapter mode
-            if getattr(self.eval_args, "use_clitmoe_eval", False):
-                print("信息: 检测到启用 CLIT-MoE 评估 (单Adapter模式)")
+            # Check if cl-MoE evaluation is enabled for single adapter mode
+            if getattr(self.eval_args, "use_clmoe_eval", False):
+                print("信息: 检测到启用 cl-MoE 评估 (单Adapter模式)")
                 if not self.model_args.adapter_name_or_path:
-                     raise ValueError("错误: 启用 CLIT-MoE 评估，但未提供 adapter_name_or_path")
-                # Ensure finetuning_type is 'lora' for CLIT-MoE
+                     raise ValueError("错误: 启用 cl-MoE 评估，但未提供 adapter_name_or_path")
+                # Ensure finetuning_type is 'lora' for cl-MoE
                 if self.finetuning_args.finetuning_type != 'lora':
-                     print("警告: 启用 CLIT-MoE 评估，但 finetuning_type 不是 'lora'，将强制设置为 'lora'")
+                     print("警告: 启用 cl-MoE 评估，但 finetuning_type 不是 'lora'，将强制设置为 'lora'")
                      self.finetuning_args.finetuning_type = 'lora'
-                     # Ensure necessary CLIT-MoE args are present in finetuning_args if needed
-                     if not hasattr(self.finetuning_args, 'expert_num'):
+                     # Ensure necessary cl-MoE args are present in finetuning_args if needed
+                     if not hasattr(self.cl_finetuning_args, 'expert_num'):
                          # Attempt to fetch from args dict if available, else raise error or set default
                          if isinstance(args, dict) and 'expert_num' in args:
-                              self.finetuning_args.expert_num = args['expert_num']
-                              print(f"信息: 从参数字典中获取 expert_num: {self.finetuning_args.expert_num}")
+                              self.cl_finetuning_args.expert_num = args['expert_num']
+                              print(f"信息: 从参数字典中获取 expert_num: {self.cl_finetuning_args.expert_num}")
                          else:
                               # Default or raise error, depending on expected behavior
-                              self.finetuning_args.expert_num = 2 # Example default
-                              print(f"警告: 未找到 expert_num 参数，CLIT-MoE 加载器可能需要它。使用默认值: {self.finetuning_args.expert_num}")
+                              self.cl_finetuning_args.expert_num = 2 # Example default
+                              print(f"警告: 未找到 expert_num 参数，cl-MoE 加载器可能需要它。使用默认值: {self.finetuning_args.expert_num}")
                          # Similarly for task_embedding_dim if needed by loader
 
-                print(f"信息: 正在使用 load_clitmoe_model 加载模型及 CLIT-MoE adapter: {self.model_args.adapter_name_or_path}")
-                self.model = load_clitmoe_model( # Use CLIT-MoE loader
+                print(f"信息: 正在使用 load_clmoe_model 加载模型及 cl-MoE adapter: {self.model_args.adapter_name_or_path}")
+                self.model = load_clmoe_model( # Use cl-MoE loader
                     tokenizer=self.tokenizer,
                     model_args=self.model_args,
                     finetuning_args=self.finetuning_args,
+                    cl_finetuning_args=self.cl_finetuning_args,
                     is_trainable=False, # Evaluation mode
                     add_valuehead=False # No value head needed for evaluation
                 )
-                print("信息: CLIT-MoE 模型加载完成")
+                print("信息: cl-MoE 模型加载完成")
                 self.current_adapter_path = self.model_args.adapter_name_or_path # Record the loaded adapter
 
-            # Check if MoE-LoRA evaluation is enabled (only if CLIT-MoE is not)
+            # Check if MoE-LoRA evaluation is enabled (only if cl-MoE is not)
             elif getattr(self.eval_args, "use_moelora_eval", False):
                 print("信息: 检测到启用MoE-LoRA评估 (单Adapter模式)")
                 # Directly use load_moelora_model
@@ -128,6 +133,7 @@ class CLEvalEvaluator(BaseEvaluator):
                     tokenizer=self.tokenizer,
                     model_args=self.model_args,
                     finetuning_args=self.finetuning_args,
+                    cl_finetuning_args=self.cl_finetuning_args,
                     is_trainable=False, # Evaluation mode
                     add_valuehead=False # No value head needed for evaluation
                 )
@@ -212,20 +218,40 @@ class CLEvalEvaluator(BaseEvaluator):
 
     def _load_multi_adapter_config(self) -> None:
         """加载多adapter配置文件"""
-        # 获取配置文件路径
+        # 获取配置文件基础路径 (无扩展名)
         multi_adapter_dir = self.eval_args.multi_adapter_dir
-        config_path = os.path.join(multi_adapter_dir, "multiadapter_selected_config.json")
+        config_path_base = os.path.join(multi_adapter_dir, "multiadapter_selected_config")
         
-        if not os.path.exists(config_path):
-            raise FileNotFoundError(f"多Adapter配置文件未找到: {config_path}")
-        
-        # 加载配置文件
-        with open(config_path, "r", encoding="utf-8") as f:
-            self.adapter_config = json.load(f)
-        
+        self.adapter_config = {}
+        config_loaded = False
+        loaded_path = ""
+        # 优先尝试加载 .yaml 或 .yml 文件
+        for ext in ['.yaml', '.yml', '.json']:
+            config_path = config_path_base + ext
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        if ext in ['.yaml', '.yml']:
+                             self.adapter_config = yaml.safe_load(f)
+                        else:
+                             self.adapter_config = json.load(f)
+                    config_loaded = True
+                    loaded_path = config_path
+                    logger.info_rank0(f"成功加载多Adapter配置文件: {loaded_path}")
+                    break
+                except yaml.YAMLError as e:
+                    logger.error(f"Error decoding YAML from multi-adapter config file: {config_path}. Error: {e}")
+                except json.JSONDecodeError as e:
+                    logger.error(f"Error decoding JSON from multi-adapter config file: {config_path}. Error: {e}")
+                except Exception as e:
+                    logger.error(f"Error loading multi-adapter config file {config_path}: {e}")
+
+        if not config_loaded:
+            raise FileNotFoundError(f"多Adapter配置文件未找到 (tried .yaml, .yml, .json): {config_path_base}")
+
         # 验证配置文件格式
         if "task_name" not in self.adapter_config or "adapters" not in self.adapter_config:
-            raise ValueError(f"配置文件格式无效: {config_path}")
+            raise ValueError(f"配置文件格式无效: {config_path_base}")
         
         # 验证任务名称是否匹配
         if self.adapter_config["task_name"] != self.eval_args.task:
@@ -343,17 +369,43 @@ class CLEvalEvaluator(BaseEvaluator):
 
     def _load_dataset_options(self) -> Dict:
         """加载数据集选项配置"""
+        options_path_base = None
         # 首先尝试使用命令行参数指定的路径
         if hasattr(self.eval_args, "dataset_options") and self.eval_args.dataset_options:
-            options_path = self.eval_args.dataset_options
+             # If a specific path is provided, use it directly (assume it includes extension)
+            options_path_base = self.eval_args.dataset_options
+            # Remove potential extension to try others
+            options_path_base, _ = os.path.splitext(options_path_base)
         else:
-            # 如果未指定，则使用默认路径
-            options_path = os.path.join("./data", "dataset_options.json")
-        
-        if os.path.exists(options_path):
-            with open(options_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        return {}
+            # 如果未指定，则使用默认路径 (无扩展名)
+            options_path_base = os.path.join("./data", "dataset_options")
+
+        dataset_options = {}
+        loaded = False
+        for ext in ['.yaml', '.yml', '.json']:
+            options_path = options_path_base + ext
+            if os.path.exists(options_path):
+                try:
+                    with open(options_path, "r", encoding="utf-8") as f:
+                        if ext in ['.yaml', '.yml']:
+                            dataset_options = yaml.safe_load(f)
+                        else:
+                            dataset_options = json.load(f)
+                    logger.info_rank0(f"Successfully loaded dataset options from: {options_path}")
+                    loaded = True
+                    break
+                except yaml.YAMLError as e:
+                    logger.error(f"Error decoding YAML from dataset options file: {options_path}. Error: {e}")
+                except json.JSONDecodeError as e:
+                    logger.error(f"Error decoding JSON from dataset options file: {options_path}. Error: {e}")
+                except Exception as e:
+                    logger.error(f"Error loading dataset options file {options_path}: {e}")
+
+        if not loaded:
+             logger.warning(f"Dataset options file not found (tried .yaml, .yml, .json): {options_path_base}. Returning empty options.")
+             return {} # Return empty dict if no file found
+
+        return dataset_options
 
     @torch.inference_mode()
     def batch_inference(self, batch: List[Dict]) -> List[Dict]:

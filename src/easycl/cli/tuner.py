@@ -46,7 +46,7 @@ from ..cl.ilora import run_sft_ilora
 from ..cl.moe import run_sft_moelora
 from ..cl.abscl import run_sft_abscl
 from ..cl.dynamic_conpet import run_sft_dynamic_conpet
-from ..cl.clmoe import run_sft_clitmoe
+from ..cl.clmoe import run_sft_clmoe
 from ..cl.ssr import run_sft_ssr
 from ..cl.pseudo_replay import run_sft_pseudo_replay
 
@@ -170,14 +170,14 @@ def _training_function(config: Dict[str, Any]) -> None:
                 logger.warning("Could not determine current_task_id. ABSCL will use default domain ID.")
                 cl_finetuning_args.current_task_id = "default_domain"
 
-    # 添加CLIT-MoE参数验证
-    if cl_finetuning_args.use_clit_moe:
+    # 添加cl-MoE参数验证
+    if cl_finetuning_args.use_cl_moe:
         if finetuning_args.finetuning_type != "lora":
-            logger.error("CLIT-MoE is only supported with LoRA fine-tuning. CLIT-MoE will be disabled.")
-            cl_finetuning_args.use_clit_moe = False
+            logger.error("cl-MoE is only supported with LoRA fine-tuning. cl-MoE will be disabled.")
+            cl_finetuning_args.use_cl_moe = False
         elif cl_finetuning_args.expert_num <= 1:
-            logger.error("expert_num must be greater than 1 for CLIT-MoE. CLIT-MoE will be disabled.")
-            cl_finetuning_args.use_clit_moe = False
+            logger.error("expert_num must be greater than 1 for cl-MoE. cl-MoE will be disabled.")
+            cl_finetuning_args.use_cl_moe = False
 
     # 添加Pseudo Replay参数验证
     if cl_finetuning_args.use_pseudo_replay:
@@ -314,8 +314,8 @@ def _training_function(config: Dict[str, Any]) -> None:
                 cl_finetuning_args=cl_finetuning_args,
                 callbacks=callbacks,
             )
-        elif cl_finetuning_args.use_clit_moe:
-            run_sft_clitmoe(
+        elif cl_finetuning_args.use_cl_moe:
+            run_sft_clmoe(
                 model_args=model_args,
                 data_args=data_args,
                 training_args=training_args,

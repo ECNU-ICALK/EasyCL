@@ -223,12 +223,12 @@ class MOELoraArguments(CommonCLFinetuningArguments):
 
 
 @dataclass
-class CLITMoEArguments(CommonCLFinetuningArguments):
-    """Arguments pertaining to CLIT-MoE method."""
+class clMoEArguments(CommonCLFinetuningArguments):
+    """Arguments pertaining to cl-MoE method."""
     
-    use_clit_moe: bool = field(
+    use_cl_moe: bool = field(
         default=False,
-        metadata={"help": "Whether to use CLIT-MoE for finetuning."}
+        metadata={"help": "Whether to use cl-MoE for finetuning."}
     )
 
 @dataclass
@@ -430,7 +430,7 @@ class CLFinetuningArguments(
     LAMOLArguments,
     GEMArguments,
     MOELoraArguments,
-    CLITMoEArguments,
+    clMoEArguments,
     DynamicConPETArguments,
     SSRArguments,
     ABSCLArguments,
@@ -454,7 +454,7 @@ class CLFinetuningArguments(
             self.use_olora,
             self.use_lamol,
             self.use_gem,
-            self.use_clit_moe,
+            self.use_cl_moe,
             self.use_dynamic_conpet,
             self.use_ssr,
             self.use_abscl,

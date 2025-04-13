@@ -1,8 +1,9 @@
 """
-一键式持续学习训练和评估的实现
+Implementation of one-click continual learning training and evaluation
 """
 import os
 import json
+import yaml
 import torch
 import gc
 import numpy as np
@@ -25,61 +26,61 @@ from llamafactory.extras.logging import get_logger
 from llamafactory.hparams.parser import HfArgumentParser
 from easycl.cl_workflow.evaluator import CLEvaluator
 from easycl.cl_workflow.cl_eval.cl_metrics import CLMetricsCalculator
-
+from easycl.hparams.parser import get_cl_eval_args
 logger = get_logger(__name__)
 
 @dataclass
 class CLTrainArguments:
-    """持续学习训练参数"""
+    """Continual learning training parameters"""
     train_params: str = field(
         default="",
-        metadata={"help": "JSON格式的训练参数文件路径"}
+        metadata={"help": "Path to the training parameter file in JSON format"}
     )
     output_dir: str = field(
         default="outputs",
-        metadata={"help": "训练输出目录"}
+        metadata={"help": "Training output directory"}
     )
 
 @dataclass
 class CLEvalArguments:
-    """持续学习评估参数"""
+    """Continual learning evaluation parameters"""
     eval_params: str = field(
         default="",
-        metadata={"help": "JSON格式的评估参数文件路径"}
+        metadata={"help": "Path to the evaluation parameter file in JSON format"}
     )
     save_dir: str = field(
         default="eval_results",
-        metadata={"help": "评估结果保存目录"}
+        metadata={"help": "Directory to save evaluation results"}
     )
 
 @dataclass
 class CLWorkflowArguments:
-    """持续学习工作流参数"""
+    """Continual learning workflow parameters"""
     mode: str = field(
         default="train_only",
         metadata={
-            "help": "运行模式：'train_only', 'eval_only', 'train_then_eval', 'full_workflow'"
+            "help": "Run mode: 'train_only', 'eval_only', 'train_then_eval', 'full_workflow'"
         }
     )
     previewonly: bool = field(
         default=False,
-        metadata={"help": "是否只预览命令而不执行"}
+        metadata={"help": "Whether to preview commands without executing"}
     )
     clean_dirs: bool = field(
         default=False,
-        metadata={"help": "是否在运行前清空输出和评估目录"}
+        metadata={"help": "Whether to clean output and evaluation directories before running"}
     )
 
 class CLCommandGenerator:
-    """持续学习命令生成器"""
+    """Continual learning command generator"""
     
     def __init__(self, train_kwargs: Dict, eval_kwargs: Dict):
         self.train_kwargs = train_kwargs
         self.eval_kwargs = eval_kwargs
-        # 从train_kwargs中解析任务列表
+        # Parse task list from train_kwargs
         self.tasks = self.train_kwargs.get("dataset", "").split(",")
         if not self.tasks or not self.tasks[0]:
-            logger.warning("未在训练参数中找到有效的dataset参数，tasks列表将为空")
+            logger.warning("No valid dataset parameter found in training arguments, tasks list will be empty")
             self.tasks = []
         
         # Load config only once
@@ -88,65 +89,65 @@ class CLCommandGenerator:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 self.config = json.load(f)
         except Exception as e:
-            logger.error(f"无法加载参数配置文件: {self.config_path}. Error: {str(e)}")
-            logger.error("将使用空的配置，可能导致参数管理错误！")
+            logger.error(f"Failed to load parameter config file: {self.config_path}. Error: {str(e)}")
+            logger.error("Using empty config, may lead to parameter management errors!")
             self.config = {} # Use empty config to avoid crashing, but log error
 
     def _dict_to_args(self, args_dict: Dict) -> str:
-        """将字典转换为命令行参数字符串
+        """Convert a dictionary to a command line argument string
         
         Args:
-            args_dict: 参数字典
+            args_dict: Parameter dictionary
             
         Returns:
-            str: 命令行参数字符串
+            str: Command line argument string
         """
         args = []
         for k, v in args_dict.items():
-            # 跳过None值、注释参数和内部使用的参数
+            # Skip None values, commented parameters, and internally used parameters
             if v is None or k.startswith("#") or k == "cl_method":
                 continue
             
-            # 处理布尔值
+            # Handle boolean values
             if isinstance(v, bool):
                 args.append(f"--{k} {str(v).lower()}")
-            # 处理adapter_name_or_path特殊情况
+            # Handle adapter_name_or_path special case
             elif k == "adapter_name_or_path":
-                # 对于adapter_name_or_path，如果是列表则转换为逗号分隔的字符串
+                # For adapter_name_or_path, convert list to comma-separated string
                 if isinstance(v, (list, tuple)):
                     args.append(f"--{k} {','.join(map(str, v))}")
                 else:
                     args.append(f"--{k} {str(v)}")
-            # 处理hidden_state_layers特殊情况
+            # Handle hidden_state_layers special case
             elif k == "hidden_state_layers":
-                # 将列表转换为空格分隔的字符串
+                # Convert list to space-separated string
                 if isinstance(v, (list, tuple)):
                     args.append(f"--{k} {' '.join(map(str, v))}")
                 else:
                     args.append(f"--{k} {str(v)}")
-            # 处理列表或元组
+            # Handle list or tuple
             elif isinstance(v, (list, tuple)):
-                # 如果是空列表，跳过该参数
+                # If it's an empty list, skip the parameter
                 if not v:
                     continue
-                # 如果是列表或元组，将其转换为逗号分隔的字符串
+                # If it's a list or tuple, convert it to a comma-separated string
                 args.append(f"--{k} {','.join(map(str, v))}")
-            # 处理字典
+            # Handle dictionary
             elif isinstance(v, dict):
-                # 如果是空字典，跳过该参数
+                # If it's an empty dictionary, skip the parameter
                 if not v:
                     continue
-                # 将字典转换为JSON字符串
+                # Convert dictionary to JSON string
                 import json
                 json_str = json.dumps(v, ensure_ascii=False).replace('"', '\\"')
                 args.append(f'--{k} "{json_str}"')
             else:
-                # 对于其他类型，直接转换为字符串
+                # For other types, convert directly to string
                 args.append(f"--{k} {str(v)}")
         return " ".join(args)
         
     def _get_auto_managed_params(self, task_id: int, task: str, is_first_task: bool) -> Dict[str, Any]:
-        """获取自动管理的、依赖于前序任务的参数 (Refactored based on new config)"""
+        """Get automatically managed parameters that depend on previous tasks (Refactored based on new config)"""
         managed_args = {}
         # Use user-provided base output directory
         base_dir = self.train_kwargs["output_dir"]
@@ -289,7 +290,7 @@ class CLCommandGenerator:
         return managed_args
         
     def generate_train_command(self, task_id: int, task: str) -> str:
-        """生成训练命令 (Refactored based on new config)"""
+        """Generate training command"""
         args = self.train_kwargs.copy()
         is_first_task = (task_id == 0)
         
@@ -413,7 +414,7 @@ class CLCommandGenerator:
         return f"easycl-cli cl_train {self._dict_to_args(args_for_cli)}"
         
     def generate_eval_command(self, task_output_dir: str, task_id: Optional[int], is_lora: bool, base_model_path: Optional[str] = None) -> str:
-        """生成评估命令 (No changes needed based on request)"""
+        """Generate evaluation command"""
         args = self.eval_kwargs.copy()
         
         # 设置模型路径
@@ -462,7 +463,7 @@ class CLCommandGenerator:
         return f"easycl-cli cl_eval {self._dict_to_args(args)}"
 
 class CLWorkflow:
-    """持续学习工作流"""
+    """Continual learning workflow"""
     
     def __init__(
         self,
@@ -652,9 +653,9 @@ class CLWorkflow:
             # Ensure essential eval args are set correctly (e.g., save_dir might be overwritten by loop above)
             # cl_eval_args.save_dir = self.eval_args.save_dir # Already done by loop if save_dir is in eval_kwargs
             # cl_eval_args.cl_tasks = ",".join(self.tasks) # Ensure tasks are correctly set for evaluator - moved before post_init
-            
+            _, _, _, _, cl_finetuning_args = get_cl_eval_args(self.eval_kwargs)
             try:
-                self.evaluator = CLEvaluator((model_args, data_args, cl_eval_args, finetuning_args))
+                self.evaluator = CLEvaluator((model_args, data_args, cl_eval_args, finetuning_args, cl_finetuning_args))
                 self.metrics_calculator = CLMetricsCalculator(self.tasks)
             except Exception as e:
                 logger.error(f"Failed to initialize CLEvaluator or CLMetricsCalculator: {e}")
@@ -664,7 +665,7 @@ class CLWorkflow:
             
         
     def _validate_params(self):
-        """验证参数的有效性 (Simplified: Removed default setting logic)"""
+        """Validate parameter validity"""
         logger.info_rank0("Validating parameters...")
         # Validate train parameters only if training is involved
         if self.workflow_args.mode != "eval_only":
@@ -691,49 +692,69 @@ class CLWorkflow:
             # === Reintroduce CL method detection based on use_* flags ===
             detected_cl_method = None
             enabled_methods = []
-            config_path = os.path.join(os.path.dirname(__file__), "cl_params_config.json")
-            try:
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                supported_methods = config.get("cl_methods_registry", {}).get("methods", [])
-                
-                for method in supported_methods:
-                    use_flag = f"use_{method}"
-                    if self.train_kwargs.get(use_flag, False):
-                        enabled_methods.append(method)
-                        if detected_cl_method is None: # Set the first detected method
-                            detected_cl_method = method
-                            logger.info_rank0(f"Detected enabled CL method flag '{use_flag}'. Setting cl_method='{method}'.")
-                
-                if len(enabled_methods) > 1:
-                    logger.warning(
-                        f"Multiple CL method flags enabled: {', '.join(enabled_methods)}. "
-                        f"Using the first detected method: '{detected_cl_method}'."
-                    )
-                elif not detected_cl_method and "cl_method" not in self.train_kwargs:
-                    logger.warning("No 'use_<method>' flag found true in train_kwargs, and 'cl_method' is not explicitly set.")
-                
-                # Set the detected cl_method in train_kwargs if found and not already explicitly set
-                if detected_cl_method and "cl_method" not in self.train_kwargs:
-                    self.train_kwargs["cl_method"] = detected_cl_method
-                elif detected_cl_method and "cl_method" in self.train_kwargs and self.train_kwargs["cl_method"] != detected_cl_method:
-                    logger.warning(f"Explicit 'cl_method' ('{self.train_kwargs['cl_method']}') differs from detected method based on 'use_{detected_cl_method}' flag. Using the explicit 'cl_method'.")
+            config = {} # Initialize config as empty dict
+            # Try loading yaml/yml first, then json
+            config_path_base = os.path.join(os.path.dirname(__file__), "cl_params_config")
+            config_loaded = False
+            for ext in ['.yaml', '.yml', '.json']:
+                config_path = config_path_base + ext
+                if os.path.exists(config_path):
+                    try:
+                        with open(config_path, 'r', encoding='utf-8') as f:
+                            if ext in ['.yaml', '.yml']:
+                                config = yaml.safe_load(f)
+                            else:
+                                config = json.load(f)
+                        logger.info_rank0(f"Successfully loaded CL parameters config from: {config_path}")
+                        config_loaded = True
+                        break
+                    except yaml.YAMLError as e:
+                        logger.error(f"Error decoding YAML from CL parameters config file: {config_path}. Error: {e}")
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Error decoding JSON from CL parameters config file: {config_path}. Error: {e}")
+                    except Exception as e:
+                        logger.error(f"Error loading CL parameters config file {config_path}: {e}")
 
-            except Exception as e:
-                logger.error(f"Could not load or parse {config_path} to detect CL method: {e}")
-                logger.warning("CL method detection skipped due to config loading error.")
+            if not config_loaded:
+                 logger.error(f"Could not load CL parameters config file (tried .yaml, .yml, .json): {config_path_base}")
+                 logger.warning("CL method detection and support verification skipped due to config loading error.")
+            else:
+                 supported_methods = config.get("cl_methods_registry", {}).get("methods", [])
+                 if supported_methods:
+                     for method in supported_methods:
+                         use_flag = f"use_{method}"
+                         if self.train_kwargs.get(use_flag, False):
+                             enabled_methods.append(method)
+                             if detected_cl_method is None: # Set the first detected method
+                                 detected_cl_method = method
+                                 logger.info_rank0(f"Detected enabled CL method flag '{use_flag}'. Setting cl_method='{method}'.")
+                
+                 if len(enabled_methods) > 1:
+                     logger.warning(
+                         f"Multiple CL method flags enabled: {', '.join(enabled_methods)}. "
+                         f"Using the first detected method: '{detected_cl_method}'."
+                     )
+                 elif not detected_cl_method and "cl_method" not in self.train_kwargs:
+                     logger.warning("No 'use_<method>' flag found true in train_kwargs, and 'cl_method' is not explicitly set.")
+                
+                 # Set the detected cl_method in train_kwargs if found and not already explicitly set
+                 if detected_cl_method and "cl_method" not in self.train_kwargs:
+                     self.train_kwargs["cl_method"] = detected_cl_method
+                 elif detected_cl_method and "cl_method" in self.train_kwargs and self.train_kwargs["cl_method"] != detected_cl_method:
+                     logger.warning(f"Explicit 'cl_method' ('{self.train_kwargs['cl_method']}') differs from detected method based on 'use_{detected_cl_method}' flag. Using the explicit 'cl_method'.")
+                 else:
+                     logger.error(f"Could not load or parse CL parameters config to detect CL method.")
+                
             # === End of CL method detection ===
 
             # Check if a CL method is specified (either explicitly or detected) and if it's supported
             cl_method = self.train_kwargs.get("cl_method")
             supported_methods = [] # Define outside try block
-            config_path = os.path.join(os.path.dirname(__file__), "cl_params_config.json")
-            try:
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                supported_methods = config.get("cl_methods_registry", {}).get("methods", [])
-            except Exception as e:
-                 logger.error(f"Could not load or parse {config_path} to get supported methods: {e}")
+            # Config should already be loaded from detection step above
+            if config: # Check if config was loaded successfully earlier
+                 supported_methods = config.get("cl_methods_registry", {}).get("methods", [])
+            else:
+                 logger.error(f"Could not get supported methods because CL parameters config failed to load earlier.")
 
             if cl_method:
                 # Re-check support (might be redundant if detection worked, but safe)
@@ -767,25 +788,36 @@ class CLWorkflow:
 
                     
     def _load_params(self, params_file: str) -> Dict:
-        """加载参数文件"""
+        """Load parameter file"""
         if not params_file:
             return {}
         try:
+            _, ext = os.path.splitext(params_file)
             with open(params_file, "r", encoding="utf-8") as f:
-                # Simple JSON loading for now
-                return json.load(f)
+                if ext.lower() in ['.yaml', '.yml']:
+                    logger.info_rank0(f"Loading YAML parameter file: {params_file}")
+                    return yaml.safe_load(f)
+                elif ext.lower() == '.json':
+                    logger.info_rank0(f"Loading JSON parameter file: {params_file}")
+                    return json.load(f)
+                else:
+                    logger.warning(f"Unknown file extension '{ext}' for parameter file: {params_file}. Attempting to load as JSON.")
+                    return json.load(f) # Default attempt as JSON
         except FileNotFoundError:
             logger.error(f"Parameter file not found: {params_file}")
             raise
-        except json.JSONDecodeError:
-            logger.error(f"Error decoding JSON from parameter file: {params_file}")
+        except yaml.YAMLError as e:
+             logger.error(f"Error decoding YAML from parameter file: {params_file}. Error: {e}")
+             raise
+        except json.JSONDecodeError as e:
+            logger.error(f"Error decoding JSON from parameter file: {params_file}. Error: {e}")
             raise
         except Exception as e:
             logger.error(f"Error loading parameter file {params_file}: {e}")
             raise
             
     def _get_commands(self) -> Tuple[List[str], List[str]]:
-        """获取训练和评估命令列表 (Logic using command_generator remains the same)"""
+        """Get training and evaluation command lists"""
         train_commands = []
         eval_commands = []
         
@@ -860,7 +892,7 @@ class CLWorkflow:
         
         
     def preview_commands(self):
-        """预览将要执行的命令 (No changes needed)"""
+        """Preview commands to be executed"""
         # Use a temporary flag to prevent _get_commands from logging preview messages internally if called again by run()
         original_preview_flag = self.workflow_args.previewonly
         self.workflow_args.previewonly = True # Temporarily set flag for _get_commands
@@ -882,7 +914,7 @@ class CLWorkflow:
                 print(f"Eval Step {i}: {cmd}\n")
                 
     def run(self):
-        """运行持续学习工作流"""
+        """Run continual learning workflow"""
         # Preview commands first, regardless of mode
         self.preview_commands()
         
@@ -934,7 +966,7 @@ class CLWorkflow:
 
 
     def _run_train_only(self):
-        """运行训练模式"""
+        """Run training mode"""
         train_commands, _ = self._get_commands()
         if train_commands:
             for i, cmd in enumerate(train_commands):
@@ -943,8 +975,8 @@ class CLWorkflow:
             logger.info_rank0("No training commands generated for train_only mode.")
                     
     def _run_eval_only(self):
-        """运行评估模式"""
-        # 修改解包顺序：忽略训练命令，获取评估命令列表
+        """Run evaluation mode"""
+        # Modify unpacking order: ignore training commands, get evaluation command list
         _, eval_commands = self._get_commands() # Ignore train commands
         if eval_commands:
             for i, cmd in enumerate(eval_commands):
@@ -954,11 +986,11 @@ class CLWorkflow:
             logger.info_rank0("No evaluation commands generated for eval_only mode.")
         # CL Metrics calculation happens in run()
                     
-            # 计算持续学习指标
+            # Calculate continual learning metrics
             #self._calculate_cl_metrics()
 
     def _run_train_then_eval(self):
-        """运行训练后评估模式"""
+        """Run train-then-evaluate mode"""
         train_commands, eval_commands = self._get_commands()
         
         # Execute training first
@@ -980,7 +1012,7 @@ class CLWorkflow:
         # CL Metrics calculation happens in run()
 
     def _run_full_workflow(self):
-        """运行完整工作流 (Currently same as train_then_eval)"""
+        """Run complete workflow (Currently same as train_then_eval)"""
         # If "full_workflow" should mean evaluate after *each* task, the logic needs modification.
         # For now, treat it as train all, then evaluate all.
         logger.info_rank0("Running full workflow (Train All -> Eval All)...")
@@ -988,7 +1020,7 @@ class CLWorkflow:
         # CL Metrics calculation happens in run()
 
     def _calculate_cl_metrics(self):
-        """计算持续学习指标 (Minor adjustments for clarity)"""
+        """Calculate continual learning metrics"""
         if not self.evaluator or not self.metrics_calculator:
             logger.error("Evaluator or Metrics Calculator not initialized. Skipping CL metrics.")
             return None
@@ -1045,7 +1077,7 @@ class CLWorkflow:
             return None
 
     def _save_cl_metrics(self, metrics: Dict[str, Any]):
-        """保存持续学习指标和详细结果 (No changes needed)"""
+        """Save continual learning metrics and detailed results"""
         eval_base_dir = self.eval_kwargs.get("save_dir", "eval_results")
         save_path = os.path.join(eval_base_dir, "cl_metrics.json")
         try:
@@ -1120,7 +1152,7 @@ class CLWorkflow:
         logger.info_rank0("==========================================")
 
     def _clean_directories(self):
-        """清理输出和评估目录 (No changes needed)"""
+        """Clean output and evaluation directories"""
         import shutil
         
         logger.info_rank0("Starting directory cleanup...")
@@ -1164,28 +1196,28 @@ class CLWorkflow:
 
 # CLTrainer class remains the same as it doesn't deal with config directly
 class CLTrainer:
-    """持续学习训练器"""
+    """Continual learning trainer"""
     
     def __init__(self, base_dir: str):
-        """初始化持续学习训练器
+        """Initialize continual learning trainer
         
         Args:
-            base_dir: 基础输出目录
+            base_dir: Base output directory
         """
         self.base_dir = base_dir
         # Runtime state might be less useful now config drives parameters
         # self.runtime_state_file = os.path.join(base_dir, "cl_runtime_state.json")
         
     def train_task(self, task: str, task_id: int, args: Dict[str, Any]) -> str:
-        """训练单个任务 (Internally calls run_exp)
+        """Train a single task (Internally calls run_exp)
         
         Args:
-            task: 任务名称
-            task_id: 任务ID
-            args: 训练参数 (already prepared by CLCommandGenerator logic)
+            task: Task name
+            task_id: Task ID
+            args: Training parameters (already prepared by CLCommandGenerator logic)
             
         Returns:
-            str: 任务输出目录 (as determined by args['output_dir'])
+            str: Task output directory (as determined by args['output_dir'])
         """
         task_output_dir = args["output_dir"] # Get output dir from prepared args
         os.makedirs(task_output_dir, exist_ok=True)
@@ -1213,7 +1245,7 @@ class CLTrainer:
 
 # main function remains largely the same, parsing args and initiating the workflow
 def main():
-    """主函数"""
+    """Main function"""
     parser = HfArgumentParser((
         CLWorkflowArguments,
         CLTrainArguments, # Specifies the input training config file

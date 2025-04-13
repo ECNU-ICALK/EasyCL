@@ -140,7 +140,7 @@ def _setup_freeze_tuning(
     logger.info_rank0("Set trainable layers: {}".format(",".join(trainable_layers)))
 
 
-def _setup_clitmoe_tuning(
+def _setup_clmoe_tuning(
     config: "PretrainedConfig",
     model: "PreTrainedModel",
     model_args: "ModelArguments",
@@ -150,11 +150,11 @@ def _setup_clitmoe_tuning(
     cast_trainable_params_to_fp32: bool,
 ) -> "PeftModel":
     """
-    使用CLIT-MoE设置模型
+    使用CL-MoE设置模型
     """
     if is_trainable:
-        if cl_finetuning_args.use_clit_moe and cl_finetuning_args.expert_num > 1:
-            logger.info_rank0(f"Fine-tuning method: CLIT-MoE with {cl_finetuning_args.expert_num} experts")
+        if cl_finetuning_args.use_cl_moe and cl_finetuning_args.expert_num > 1:
+            logger.info_rank0(f"Fine-tuning method: CL-MoE with {cl_finetuning_args.expert_num} experts")
         elif cl_finetuning_args.use_moe and cl_finetuning_args.expert_num > 1:
             logger.info_rank0(f"Fine-tuning method: MOE-LoRA with {cl_finetuning_args.expert_num} experts")
 
@@ -242,17 +242,17 @@ def _setup_clitmoe_tuning(
         }
         
         # 根据expert_num决定使用哪种配置
-        if cl_finetuning_args.use_clit_moe and cl_finetuning_args.expert_num > 1:
+        if cl_finetuning_args.use_cl_moe and cl_finetuning_args.expert_num > 1:
             if cl_finetuning_args.task_embedding_dim > 0:
                 task_embedding_dim = cl_finetuning_args.task_embedding_dim
             else:
                 task_embedding_dim = 64  # 默认值
                 
-            logger.info_rank0(f"Using CLIT-MoE with {cl_finetuning_args.expert_num} experts and task embedding dim {task_embedding_dim}")
+            logger.info_rank0(f"Using CL-MoE with {cl_finetuning_args.expert_num} experts and task embedding dim {task_embedding_dim}")
             
             # 使用CLMoEMOELoraConfig替代LoraConfig
-            peft_config = CLMoEMOELoraConfig(
-                task_type=TaskType.CAUSAL_LM,
+            lora_config = CLMoEMOELoraConfig(
+                task_type=TaskType.CAUSAL_LM_CLMoE,
                 inference_mode=False,
                 expert_num=cl_finetuning_args.expert_num,
                 task_embedding_dim=task_embedding_dim,
@@ -280,7 +280,7 @@ def _setup_clitmoe_tuning(
 
         # 如果没有使用unsloth，则应用get_peft_model
         if not model_args.use_unsloth:
-            model = get_peft_model(model, peft_config)
+            model = get_peft_model(model, lora_config)
 
     if is_trainable and cast_trainable_params_to_fp32:
         for param in filter(lambda p: p.requires_grad, model.parameters()):
@@ -289,7 +289,7 @@ def _setup_clitmoe_tuning(
     return model
 
 
-def init_clitmoe_adapter(
+def init_clmoe_adapter(
     config: "PretrainedConfig",
     model: "PreTrainedModel",
     model_args: "ModelArguments",
@@ -330,7 +330,7 @@ def init_clitmoe_adapter(
     elif finetuning_args.finetuning_type == "freeze":
         _setup_freeze_tuning(model, finetuning_args, is_trainable, cast_trainable_params_to_fp32)
     elif finetuning_args.finetuning_type == "lora":
-        model = _setup_clitmoe_tuning(
+        model = _setup_clmoe_tuning(
             config, model, model_args, finetuning_args, cl_finetuning_args, is_trainable, cast_trainable_params_to_fp32
         )
     else:
