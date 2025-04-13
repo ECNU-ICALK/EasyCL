@@ -19,63 +19,63 @@ EasyCL is an extension of the LLaMA Factory framework, focusing on continual lea
 
 The framework integrates a variety of state-of-the-art continual learning techniques designed specifically for language models, allowing researchers and practitioners to easily implement, compare, and develop new methods.
 
-For detailed implementation of the continual learning workflow, see [src/llamafactory/cl_workflow/README.md](src/llamafactory/cl_workflow/README.md).
+For detailed implementation of the continual learning workflow, see [src/easycl/cl_workflow/README.md](src/easycl/cl_workflow/README.md).
 
 ## Implemented Methods
 
-1. **Elastic Weight Consolidation (EWC)** - [View Implementation](src/llamafactory/cl/ewc/README.md)
+1. **Elastic Weight Consolidation (EWC)** - [View Implementation](src/easycl/cl/ewc/README.md)
    - Adds regularization based on parameter importance
    - Uses Fisher Information Matrix to measure importance
 
-2. **Learning Without Forgetting (LWF)** - [View Implementation](src/llamafactory/cl/lwf/README.md)
+2. **Learning Without Forgetting (LWF)** - [View Implementation](src/easycl/cl/lwf/README.md)
    - Preserves knowledge using knowledge distillation
    - Maintains performance without requiring old task data
 
-3. **Experience Replay** - [View Implementation](src/llamafactory/cl/replay/README.md)
+3. **Experience Replay** - [View Implementation](src/easycl/cl/replay/README.md)
    - Replays a subset of data from previous tasks
    - Uses memory buffer to store past experiences
 
-4. **LAMOL (Language Modeling for Lifelong Language Learning)** - [View Implementation](src/llamafactory/cl/lamol/README.md)
+4. **LAMOL (Language Modeling for Lifelong Language Learning)** - [View Implementation](src/easycl/cl/lamol/README.md)
    - Generates pseudo samples of previous tasks
    - Combines generated samples with current task data
 
-5. **O-LoRA (Orthogonal subspace learning)** - [View Implementation](src/llamafactory/cl/olora/README.md)
+5. **O-LoRA (Orthogonal subspace learning)** - [View Implementation](src/easycl/cl/olora/README.md)
    - Extends LoRA with orthogonal constraints
    - Prevents interference between task-specific adaptations
 
-6. **Gradient Episodic Memory (GEM)** - [View Implementation](src/llamafactory/cl/gem/README.md)
+6. **Gradient Episodic Memory (GEM)** - [View Implementation](src/easycl/cl/gem/README.md)
    - Projects gradients using episodic memory
    - Prevents interference with past task performance
 
-7. **I-LoRA (Interpolation-based LoRA)** - [View Implementation](src/llamafactory/cl/ilora/README.md)
+7. **I-LoRA (Interpolation-based LoRA)** - [View Implementation](src/easycl/cl/ilora/README.md)
    - Uses dual-memory experience replay framework
    - Interpolates LoRA parameters with EMA updates
 
-8. **MOE-LoRA (Mixture of Experts with LoRA)** - [View Implementation](src/llamafactory/cl/moelora/README.md)
+8. **MOE-LoRA (Mixture of Experts with LoRA)** - [View Implementation](src/easycl/cl/moelora/README.md)
    - Combines MoE architecture with LoRA for adaptation
    - Uses multiple expert modules for specialization
 
-9. **ABSCL (ABSA LLM-CL)** - [View Implementation](src/llamafactory/cl/abscl/README.md)
+9. **ABSCL (ABSA LLM-CL)** - [View Implementation](src/easycl/cl/abscl/README.md)
    - Trains shared and task-specific adapters
    - Uses feature statistics for adapter selection
 
-10. **Dynamic ConPet** - [View Implementation](src/llamafactory/cl/dynamic_conpet/README.md)
+10. **Dynamic ConPet** - [View Implementation](src/easycl/cl/dynamic_conpet/README.md)
     - Combines shared and task-specific adapters
     - Uses classifier for dynamic routing
 
-11. **CLIT-MoE (Continual Learning with Task-specific MoE)** - [View Implementation](src/llamafactory/cl/clitmoe/README.md)
+11. **CLIT-MoE (Continual Learning with Task-specific MoE)** - [View Implementation](src/easycl/cl/clmoe/README.md)
     - Uses dual momentum Mixture-of-Experts
     - Implements task-level and instance-level routing
 
-12. **Self-Synthesized Rehearsal (SSR)** - [View Implementation](src/llamafactory/cl/ssr/README.md)
+12. **Self-Synthesized Rehearsal (SSR)** - [View Implementation](src/easycl/cl/ssr/README.md)
     - Generates pseudo-samples from previous tasks
     - Uses clustering for diverse sample selection
 
-13. **Pseudo Replay** - [View Implementation](src/llamafactory/cl/pseudo_replay/README.md)
+13. **Pseudo Replay** - [View Implementation](src/easycl/cl/pseudo_replay/README.md)
     - Simplified version of SSR
     - Uses base model to generate samples for previous tasks
 
-For more details about the continual learning methods, see [src/llamafactory/cl/README.md](src/llamafactory/cl/README.md).
+For more details about the continual learning methods, see [src/easycl/cl/README.md](src/easycl/cl/README.md).
 
 ## Installation
 
@@ -125,7 +125,7 @@ easycl-cli cl_workflow --mode full_workflow \
 
 **Preview Result**: Executes training sequentially, then evaluates base/task models, and finally calculates and saves CL metrics (Last, Avg, BWT, FWT) to the evaluation output directory.
 
-For detailed information about workflow configuration and CL metrics, see [src/llamafactory/cl_workflow/README.md](src/llamafactory/cl_workflow/README.md).
+For detailed information about workflow configuration and CL metrics, see [src/easycl/cl_workflow/README.md](src/easycl/cl_workflow/README.md).
 
 ## License
 
