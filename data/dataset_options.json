@@ -1,0 +1,70 @@
+{
+  "mllm_demo": {
+    "options": ["选项1", "选项2", "选项3"],
+    "description": "Custom dataset example with 3 options"
+  },
+  "agnews": {
+    "options": ["World", "Sports", "Business", "Tech"],
+    "description": "AG News classification dataset with 4 classes"
+  },
+  "amazon": {
+    "options": ["Negative", "Positive"],
+    "description": "Amazon product review sentiment classification"
+  },
+  "dbpedia": {
+    "options": ["Company", "Educational Institution", "Artist", "Athlete", "Office Holder", "Mean of Transportation", "Building", "Natural Place", "Village", "Animal", "Plant", "Album", "Film", "Written Work"],
+    "description": "DBpedia entity classification with 14 categories"
+  },
+  "yelp": {
+    "options": ["1 star", "2 stars", "3 stars", "4 stars", "5 stars"],
+    "description": "Yelp review rating classification (1-5 stars)"
+  },
+  "yahoo": {
+    "options": ["Society & Culture", "Science & Mathematics", "Health", "Education & Reference", "Computers & Internet", "Sports", "Business & Finance", "Entertainment & Music", "Family & Relationships", "Politics & Government"],
+    "description": "Yahoo answers topic classification with 10 categories"
+  },
+  "IMDB": {
+    "options": ["Negative", "Positive"],
+    "description": "IMDB movie review sentiment classification"
+  },
+  "SST-2": {
+    "options": ["Negative", "Positive"],
+    "description": "Stanford Sentiment Treebank binary sentiment classification"
+  },
+  "MNLI": {
+    "options": ["Entailment", "Neutral", "Contradiction"],
+    "description": "Multi-Genre Natural Language Inference"
+  },
+  "QQP": {
+    "options": ["Not Duplicate", "Duplicate"],
+    "description": "Quora Question Pairs semantic equivalence classification"
+  },
+  "RTE": {
+    "options": ["Entailment", "Not Entailment"],
+    "description": "Recognizing Textual Entailment"
+  },
+  "CB": {
+    "options": ["Entailment", "Contradiction", "Neutral"],
+    "description": "CommitmentBank textual entailment dataset"
+  },
+  "BoolQA": {
+    "options": ["Yes", "No"],
+    "description": "Boolean questions dataset with yes/no answers"
+  },
+  "MultiRC": {
+    "options": ["True", "False"],
+    "description": "Multi-Sentence Reading Comprehension"
+  },
+  "WiC": {
+    "options": ["True", "False"],
+    "description": "Word in Context, determines if the word is used with the same sense in two sentences"
+  },
+  "agnews_test": {
+    "options": ["World", "Sports", "Business", "Tech"],
+    "description": "AG News classification dataset with 4 classes"
+  },
+  "custom_test": {
+    "options": ["选项1", "选项2", "选项3"],
+    "description": "Custom dataset example with 3 options"
+  }
+}

@@ -1,0 +1,250 @@
+{
+  "description": "Continual learning parameter configuration file, defining management rules for parameters of various CL methods.",
+
+  "cl_methods_registry": {
+    "description": "Registry of supported continual learning methods.",
+      "methods": [
+      "ewc", "lwf", "replay", "gem", "lamol", "olora", "ilora",
+      "ssr", "abscl", "moe", "clit_moe", "dynamic_conpet"
+    ]
+  },
+
+  "cl_method_requirements": {
+    "description": "Specifies parameter requirements for each CL method.",
+    "ewc": {
+      "needs_task_id": false,
+      "needs_prev_model":true,
+      "needs_prev_data": true,
+      "needs_replay_list": false,
+      "needs_adapter_name_or_path": true
+    },
+    "lwf": {
+      "needs_task_id": true,
+      "needs_prev_model": true,
+      "needs_prev_data": false,
+      "needs_replay_list": false,
+      "needs_adapter_name_or_path": true
+    },
+    "replay": {
+      "needs_task_id": false,
+      "needs_prev_model": false,
+      "needs_prev_data": false,
+      "needs_replay_list": true,
+      "needs_adapter_name_or_path": true
+    },
+    "gem": {
+      "needs_task_id": false,
+      "needs_prev_model": false,
+      "needs_prev_data": false,
+      "needs_replay_list": true,
+      "needs_adapter_name_or_path": true
+    },
+    "lamol": {
+      "needs_task_id": false,
+      "needs_prev_model": true,
+      "needs_prev_data": false,
+      "needs_replay_list": false,
+      "needs_adapter_name_or_path": true
+    },
+    "olora": {
+      "needs_task_id": true,
+      "needs_prev_model": false,
+      "needs_prev_data": false,
+      "needs_replay_list": false,
+      "needs_shared_paths": ["olora_history_path"],
+      "needs_adapter_name_or_path": true
+    },
+    "ilora": {
+      "needs_task_id": true,
+      "needs_prev_model": true,
+      "needs_prev_data": false,
+      "needs_replay_list": false,
+      "needs_adapter_name_or_path": true
+    },
+    "ssr": {
+      "needs_task_id": true,
+      "needs_prev_model": true,
+      "needs_prev_data": false,
+      "needs_replay_list": true,
+      "needs_shared_paths": ["pseudo_samples_dir"],
+      "needs_adapter_name_or_path": true
+    },
+    "abscl": {
+      "needs_task_id": true,
+      "needs_prev_model": false,
+      "needs_prev_data": false,
+      "needs_replay_list": true,
+      "needs_adapter_name_or_path": false
+    },
+    "moe": {
+      "needs_task_id": true,
+      "needs_prev_model": false,
+      "needs_prev_data": false,
+      "needs_replay_list": false,
+      "needs_adapter_name_or_path": true
+    },
+    "clit_moe": {
+      "needs_task_id": true,
+      "needs_prev_model": true,
+      "needs_prev_data": false,
+      "needs_replay_list": false,
+      "needs_adapter_name_or_path": true
+    },
+    "dynamic_conpet": {
+      "needs_task_id": true,
+      "needs_prev_model": false,
+      "needs_prev_data": false,
+      "needs_replay_list": true,
+      "needs_adapter_name_or_path": false
+    }
+  },
+  
+  "default_param_mappings": {
+    "description": "Default mappings for parameters that depend on previous tasks. These can be overridden by method-specific mappings in 'task_output_mapping'.",
+    "prev_task_id": {
+      "source": "previous_task_identifier",
+      "description": "Default source for the previous task identifier."
+    },
+    "previous_task_model": {
+      "source": "previous_output_dir",
+      "description": "Default source for the previous task's model path (usually output directory)."
+    },
+    "previous_task_data": {
+      "source": "previous_dataset",
+      "description": "Default source for the previous task's data identifier (e.g., dataset name)."
+    },
+    "replay_task_list": {
+      "source": "accumulated_datasets",
+      "separator": ",",
+      "description": "Default source for accumulating previous task dataset identifiers for replay."
+    }
+  },
+
+  "task_output_mapping": {
+    "description": "Defines method-specific parameter mappings related to the previous task's output, overriding defaults if necessary.",
+    "ewc": { 
+      "params": [
+        {
+          "param_name": "adapter_name_or_path", 
+          "related_to": "output_dir", 
+          "description": "Path to the previous task's adapter for EWC." 
+        },
+        {
+          "param_name": "previous_task_data",
+          "related_to": "dataset",
+           "description": "Path/identifier of previous task data for EWC Fisher calculation."
+        }
+      ]
+    },
+    "lwf": { 
+      "params": [
+        {
+          "param_name": "previous_task_model",
+          "related_to": "output_dir",
+          "description": "Path to the previous task's model for LwF distillation." 
+        }
+      ]
+    },
+    "clit_moe": {
+      "params": [
+        {
+          "param_name": "previous_task_model",
+          "related_to": "output_dir",
+          "description": "Path to the previous task's model for CLIT-MoE." 
+        }
+      ]
+    },
+    "lamol": {
+      "params": [
+        {
+          "param_name": "prev_task_dir",
+          "related_to": "output_dir",
+          "description": "Path to the previous task's directory for LaMoL." 
+        }
+      ]
+    },
+    "gem": {
+      "params": [
+
+      ]
+    },
+    "ilora": {
+      "params": [
+        {
+          "param_name": "previous_task_model",
+          "related_to": "output_dir",
+          "description": "Path to the previous task's model for I-LORA."
+        }
+
+      ]
+    },
+    "ewc": {
+      "params": [
+        {
+          "param_name": "previous_task_model",
+          "related_to": "output_dir",
+          "description": "Path to the previous task's model for I-LORA."
+        }
+      ]
+    },
+    "olora": {
+       "params": [
+         {
+           "param_name": "olora_history_path",
+           "related_to": "olora_history_path",
+           "description": "Path for saving/loading O-LoRA history adapters."
+         }
+
+      ]
+    },
+    "ssr": {
+      "params": [
+
+      ]
+    }
+
+  },
+
+  "incremental_params": {
+    "description": "Defines parameters that accumulate information from previous tasks. Relies on 'default_param_mappings' for source unless specified.",
+    "ewc": {
+      "param_name": "previous_task_data",
+       "separator": ","
+
+    }
+  },
+
+  "first_task_params": {
+    "description": "Defines parameter handling rules for the first task (when prev_task_id is not applicable).",
+    "remove_params": [
+      "previous_task_model",
+      "previous_task_data",
+      "prev_task_dir",
+      "prev_task_id",
+      "replay_task_list"
+
+    ],
+    "force_disable_methods": [
+      "ewc",
+      "lwf",
+      "replay",
+      "lamol"
+    ],
+    "methods_requiring_init": [
+      "olora",
+      "ilora"
+    ]
+  },
+
+  "first_task_special_params": {
+    "description": "Defines specific parameter values for certain methods during the first task.",
+    "olora": {
+      "orthogonal_lambda": 0.0,
+      "l2_lambda": 0.0
+    },
+    "ilora": {
+      "consistency_weight": 0.0,
+      "ema_alpha": 0.0
+    }
+  }
+}
