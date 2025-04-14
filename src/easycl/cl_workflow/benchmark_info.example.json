@@ -1,0 +1,17 @@
+{
+  "ExampleBenchmark1": {
+    "description": "An example benchmark demonstrating task ordering with 3 tasks.",
+    "orders": {
+      "order_A": [
+        "task_alpha",
+        "task_beta",
+        "task_gamma"
+      ],
+      "order_B": [
+        "task_gamma",
+        "task_alpha",
+        "task_beta"
+      ]
+    }
+  }
+} 

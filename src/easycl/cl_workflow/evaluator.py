@@ -225,60 +225,70 @@ class CLEvaluator:
     def evaluate_model(self, model_args_dict: Dict[str, Any]) -> Dict[str, Any]:
         """Evaluate model performance on all tasks"""
         results = {}
-        
+
+        # Use the args held by the CLEvaluator instance, which should be benchmark-aware
+        base_eval_args = {
+            **asdict(self.model_args),
+            **asdict(self.data_args),
+            **asdict(self.cl_eval_args),
+            **asdict(self.finetuning_args),
+            **asdict(self.cl_finetuning_args)
+        }
+        # Remove keys that should not be simply copied if model_args_dict provided them
+        # This part might need refinement depending on what model_args_dict actually contains
+        # For now, assume base_eval_args is the most up-to-date source
+        # logger.info_rank0(f"Using base eval args derived from CLEvaluator instance attributes.")
+
+
         for task in self.tasks:
-            # Create new evaluator instance for each task with deep copy
-            eval_args = copy.deepcopy(model_args_dict)
+            # Create eval_args dictionary for this task using the benchmark-aware base
+            eval_args = copy.deepcopy(base_eval_args) # Use the potentially benchmark-updated args
 
             # Update task-specific parameters
             eval_args["task"] = task
-            task_config = self.dataset_options[task]
+            task_config = self.dataset_options.get(task) # Use .get for safety
+            if task_config is None:
+                 logger.error(f"Task {task} configuration not found in dataset_options. Skipping evaluation for this task.")
+                 results[task] = {"error": "Task configuration not found."}
+                 continue
 
             # Create independent save directory for each task
-            task_save_dir = os.path.join(eval_args["save_dir"], task)
+            # Ensure the base save_dir comes from the correct source (cl_eval_args)
+            base_save_dir = self.cl_eval_args.save_dir
+            task_save_dir = os.path.join(base_save_dir, task)
             os.makedirs(task_save_dir, exist_ok=True)
-            eval_args["save_dir"] = task_save_dir
+            eval_args["save_dir"] = task_save_dir # Set task-specific save dir
 
-            logger.info(f"Evaluating task: {task}")
-            logger.info(f"Task results will be saved in: {task_save_dir}")
-            
-            # Ensure multi_adapter_dir is correctly passed
+            logger.info_rank0(f"Evaluating task: {task}") # Use info_rank0
+            logger.info_rank0(f"Task results will be saved in: {task_save_dir}") # Use info_rank0
+
+            # Ensure multi_adapter_dir is correctly passed from cl_eval_args
             if self.using_multi_adapter:
-                logger.info(f"Using multi-adapter mode for task evaluation: {task}")
-                # Ensure multi_adapter_dir parameter is passed
-                if "multi_adapter_dir" not in eval_args and hasattr(self.cl_eval_args, "multi_adapter_dir"):
-                    eval_args["multi_adapter_dir"] = self.cl_eval_args.multi_adapter_dir
-                    
-                multi_adapter_dir = eval_args.get("multi_adapter_dir", self.cl_eval_args.multi_adapter_dir)
-                logger.info(f"Multi-adapter configuration directory: {multi_adapter_dir}")
-                
-            # Fix: Ensure adapter_name_or_path is in string format
+                eval_args["multi_adapter_dir"] = self.cl_eval_args.multi_adapter_dir
+                logger.info_rank0(f"Using multi-adapter mode for task evaluation: {task}") # Use info_rank0
+                logger.info_rank0(f"Multi-adapter configuration directory: {eval_args['multi_adapter_dir']}") # Use info_rank0
+
+            # Fix: Ensure adapter_name_or_path is in string format if needed
             if "adapter_name_or_path" in eval_args and isinstance(eval_args["adapter_name_or_path"], list):
-                eval_args["adapter_name_or_path"] = ",".join(eval_args["adapter_name_or_path"])
-                logger.info(f"Converted adapter_name_or_path from list to comma-separated string: {eval_args['adapter_name_or_path']}")
+                eval_args["adapter_name_or_path"] = ",".join(map(str, eval_args["adapter_name_or_path"])) # Ensure conversion to string
+                logger.info_rank0(f"Converted adapter_name_or_path from list to comma-separated string: {eval_args['adapter_name_or_path']}") # Use info_rank0
 
-            # Save dataset options configuration as temporary file
-            task_options = {
-                task: {
-                    "options": task_config["options"],
-                    "description": task_config["description"]
-                }
-            }
-            task_options_path = os.path.join(task_save_dir, f"{task}_options.json")
-            with open(task_options_path, "w", encoding="utf-8") as f:
-                json.dump(task_options, f, indent=2, ensure_ascii=False)
+            # Get test set path for potential selectors (Ensure correct base directory)
+            # Use task_dir from cl_eval_args if available, otherwise data_args.dataset_dir
+            primary_data_dir = self.cl_eval_args.task_dir if self.cl_eval_args.task_dir else self.data_args.dataset_dir
+            if not primary_data_dir:
+                 logger.warning(f"No task_dir or dataset_dir found for task {task}. Selectors might fail if they rely on dataset path.")
+                 dataset_path = None # Indicate path is unknown
+            else:
+                 task_name_base = task.split("_")[0] # Assuming format like 'taskname_variant'
+                 dataset_path = os.path.join(primary_data_dir, f"{task_name_base}_test.json")
+                 logger.info_rank0(f"Expected test dataset path for selectors: {dataset_path}") # Use info_rank0
 
-            # Set evaluation parameters: use temporary file path
-            eval_args["dataset_options"] = task_options_path
-            
-            # Get test set path for potential selectors
-            task_name = task.split("_")[0]
-            dataset_path = os.path.join("./data", f"{task_name}_test.json")
-            
+
             # Run selector in multi-adapter mode
             if self.using_multi_adapter:
-                if not os.path.exists(dataset_path):
-                    logger.warning(f"Test set file not found for task {task}: {dataset_path}, cannot run selector")
+                if not dataset_path or not os.path.exists(dataset_path):
+                    logger.warning(f"Test set file not found for task {task} at '{dataset_path}'. Cannot run selector.") # Use info_rank0
                 else:
                     selector_run_attempted = False
                     selector_success = False # Default to failure unless a selector runs successfully
@@ -312,49 +322,69 @@ class CLEvaluator:
                     # Ensure multi_adapter_dir is included in evaluation parameters
                     eval_args["multi_adapter_dir"] = self.cl_eval_args.multi_adapter_dir
 
+
             # Determine if it's a custom dataset or standard dataset
-            if task_name in ["mmlu", "cmmlu", "ceval"]:
+            task_name_base = task.split("_")[0] # Re-get base name
+            if task_name_base in ["mmlu", "cmmlu", "ceval"]: # Standard datasets
                 # Use original evaluator for standard datasets
-                logger.info(f"Using standard evaluator for task: {task}")
-                evaluator = Evaluator(eval_args)
+                logger.info_rank0(f"Using standard evaluator for task: {task}") # Use info_rank0
+                evaluator = Evaluator(eval_args) # Pass the updated eval_args
                 evaluator.eval()
-            else:
+            else: # Custom datasets
                 # Use continuous learning evaluator for custom datasets
-                logger.info(f"Using continuous learning evaluator for task: {task}")
-                evaluator = CLEvalEvaluator(eval_args)
-                
+                logger.info_rank0(f"Using continuous learning evaluator for task: {task}") # Use info_rank0
+
+                # Ensure that cl_eval_args within eval_args has the correct task_dir
+                # It should already be there from the initial deepcopy if CLEvaluator has it.
+                # Double-check:
+                if "task_dir" not in eval_args or eval_args["task_dir"] != self.cl_eval_args.task_dir:
+                     eval_args["task_dir"] = self.cl_eval_args.task_dir # Ensure it's correct
+
+                # Also ensure dataset_dir is present if needed by CLEvalEvaluator init
+                if "dataset_dir" not in eval_args or eval_args["dataset_dir"] != self.data_args.dataset_dir:
+                     eval_args["dataset_dir"] = self.data_args.dataset_dir
+
+                evaluator = CLEvalEvaluator(eval_args) # Pass the correctly populated eval_args
+
                 # Ensure correct attributes are set in multi-adapter mode
                 if self.using_multi_adapter:
-                    logger.info(f"Enabling multi-adapter mode evaluation for task {task}")
+                    logger.info_rank0(f"Enabling multi-adapter mode evaluation for task {task}") # Use info_rank0
                     if not hasattr(evaluator, "using_multi_adapter") or not evaluator.using_multi_adapter:
                         logger.warning("Multi-adapter mode not properly enabled in CLEvalEvaluator, attempting manual enable")
                         evaluator.using_multi_adapter = True
-                        
+
                     # Ensure multi_adapter_dir is correctly passed
                     if not hasattr(evaluator.eval_args, "multi_adapter_dir") and "multi_adapter_dir" in eval_args:
                         evaluator.eval_args.multi_adapter_dir = eval_args["multi_adapter_dir"]
-                        logger.info(f"Manually set evaluator's multi_adapter_dir: {evaluator.eval_args.multi_adapter_dir}")
-                
+                        logger.info_rank0(f"Manually set evaluator's multi_adapter_dir: {evaluator.eval_args.multi_adapter_dir}") # Use info_rank0
+
                 # Run evaluation
                 evaluator.evaluate_custom_dataset()
 
             # Read evaluation results
             results_path = os.path.join(task_save_dir, "results.json")
-            with open(results_path, "r") as f:
-                results[task] = json.load(f)
+            if os.path.exists(results_path):
+                try:
+                    with open(results_path, "r", encoding="utf-8") as f: # Add encoding
+                        results[task] = json.load(f)
+                except (IOError, json.JSONDecodeError) as e:
+                    logger.error(f"Failed to read results file {results_path}: {e}")
+                    results[task] = {"error": f"Failed to read results file: {e}"}
+            else:
+                logger.error(f"Results file not found after evaluation: {results_path}")
+                results[task] = {"error": "Results file not found."}
 
-            # Clean up temporary files
-            os.remove(task_options_path)
 
             # Explicitly delete evaluator and free memory
-            logger.info(f"Task {task} evaluation completed, releasing resources")
+            logger.info_rank0(f"Task {task} evaluation completed, releasing resources") # Use info_rank0
             del evaluator
             gc.collect()
-            torch.cuda.empty_cache()
             if torch.cuda.is_available():
-                torch.cuda.reset_max_memory_allocated()
-                torch.cuda.reset_peak_memory_stats()
-        
+                torch.cuda.empty_cache()
+                # Reset memory stats if needed, though often not necessary unless debugging memory issues
+                # torch.cuda.reset_max_memory_allocated()
+                # torch.cuda.reset_peak_memory_stats()
+
         return results
 
     def run(self) -> None:

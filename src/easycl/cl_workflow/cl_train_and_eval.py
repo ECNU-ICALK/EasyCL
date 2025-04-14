@@ -27,6 +27,7 @@ from llamafactory.hparams.parser import HfArgumentParser
 from easycl.cl_workflow.evaluator import CLEvaluator
 from easycl.cl_workflow.cl_eval.cl_metrics import CLMetricsCalculator
 from easycl.hparams.parser import get_cl_eval_args
+from .benchmark_handler import BenchmarkHandler
 logger = get_logger(__name__)
 
 @dataclass
@@ -69,6 +70,19 @@ class CLWorkflowArguments:
     clean_dirs: bool = field(
         default=False,
         metadata={"help": "Whether to clean output and evaluation directories before running"}
+    )
+    # Benchmark related arguments
+    benchmark: Optional[str] = field(
+        default=None,
+        metadata={"help": "Name of the benchmark to run."}
+    )
+    benchmark_order: Optional[str] = field(
+        default=None,
+        metadata={"help": "Order definition within the benchmark to use (e.g., 'order1', 'order2')."}
+    )
+    benchmark_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Directory containing benchmark definition (benchmark_info.json) and data."}
     )
 
 class CLCommandGenerator:
@@ -512,6 +526,59 @@ class CLWorkflow:
         _normalize_adapter_path(self.train_kwargs)
         _normalize_adapter_path(self.eval_kwargs)
         
+        # --- Benchmark Mode Handling --- START
+        if self.workflow_args.benchmark and self.workflow_args.benchmark_order and self.workflow_args.benchmark_dir:
+            logger.info_rank0(f"Benchmark mode activated: name='{self.workflow_args.benchmark}', order='{self.workflow_args.benchmark_order}', dir='{self.workflow_args.benchmark_dir}'")
+            try:
+                benchmark_handler = BenchmarkHandler(
+                    benchmark_name=self.workflow_args.benchmark,
+                    benchmark_order=self.workflow_args.benchmark_order,
+                    benchmark_dir=self.workflow_args.benchmark_dir
+                )
+                ordered_tasks = benchmark_handler.get_ordered_tasks()
+                benchmark_dir = benchmark_handler.get_benchmark_dir()
+                dataset_options_path = benchmark_handler.get_dataset_options_path()
+
+                logger.info_rank0(f"Benchmark tasks loaded: {', '.join(ordered_tasks)}")
+
+                # Override tasks list
+                original_tasks_train = self.train_kwargs.get("dataset")
+                original_tasks_eval = self.eval_kwargs.get("cl_tasks")
+                self.tasks = ordered_tasks
+                logger.info_rank0(f"Overriding task list. Original train: '{original_tasks_train}', Original eval: '{original_tasks_eval}'. New: {self.tasks}")
+
+                # Override train_kwargs
+                original_train_dataset = self.train_kwargs.get("dataset")
+                original_train_dataset_dir = self.train_kwargs.get("dataset_dir")
+                self.train_kwargs["dataset"] = ",".join(self.tasks)
+                self.train_kwargs["dataset_dir"] = benchmark_dir
+                logger.info_rank0(f"Overriding train_kwargs: dataset='{self.train_kwargs['dataset']}' (was '{original_train_dataset}'), dataset_dir='{self.train_kwargs['dataset_dir']}' (was '{original_train_dataset_dir}')")
+
+                # Override eval_kwargs
+                original_eval_cl_tasks = self.eval_kwargs.get("cl_tasks")
+                original_eval_task_dir = self.eval_kwargs.get("task_dir")
+                original_eval_dataset_options = self.eval_kwargs.get("dataset_options")
+                self.eval_kwargs["cl_tasks"] = ",".join(self.tasks)
+                self.eval_kwargs["task_dir"] = benchmark_dir
+                log_eval_override = f"Overriding eval_kwargs: cl_tasks='{self.eval_kwargs['cl_tasks']}' (was '{original_eval_cl_tasks}'), task_dir='{self.eval_kwargs['task_dir']}' (was '{original_eval_task_dir}')"
+                if dataset_options_path:
+                    self.eval_kwargs["dataset_options"] = dataset_options_path
+                    log_eval_override += f", dataset_options='{dataset_options_path}' (was '{original_eval_dataset_options}')"
+                else:
+                    # If benchmark dir doesn't have options file, remove it from kwargs if it existed
+                    if "dataset_options" in self.eval_kwargs:
+                        del self.eval_kwargs["dataset_options"]
+                        log_eval_override += f", removed dataset_options (was '{original_eval_dataset_options}')"
+                logger.info_rank0(log_eval_override)
+
+            except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
+                logger.error(f"Failed to initialize or process benchmark: {e}")
+                raise # Re-raise the error to stop the workflow
+        elif self.workflow_args.benchmark or self.workflow_args.benchmark_order or self.workflow_args.benchmark_dir:
+             # If some but not all benchmark args are provided
+             logger.warning("Benchmark mode requested but some arguments are missing (--benchmark, --benchmark_order, --benchmark_dir). Proceeding with standard config.")
+        # --- Benchmark Mode Handling --- END
+
         # Validate parameters (Now simpler, no default setting)
         self._validate_params()
 
@@ -550,7 +617,22 @@ class CLWorkflow:
             elif not eval_tasks:
                 self.eval_kwargs["cl_tasks"] = train_datasets # Set cl_tasks from train dataset
 
-                  
+        # --- Ensure self.tasks reflects the final decision (benchmark or config) ---
+        # This is needed because the original task parsing happens *after* benchmark override
+        if self.workflow_args.benchmark and self.workflow_args.benchmark_order and self.workflow_args.benchmark_dir:
+            # Tasks already set by benchmark handler, do nothing here
+            pass
+        else:
+            # Re-parse tasks from potentially updated kwargs if not in benchmark mode
+            if self.workflow_args.mode == "eval_only":
+                self.tasks = self.eval_kwargs.get("cl_tasks", "").split(",")
+                if not self.tasks or not self.tasks[0]:
+                    raise ValueError("In eval_only mode (non-benchmark), cl_tasks must be provided in eval config.")
+            else:
+                self.tasks = self.train_kwargs.get("dataset", "").split(",")
+                if not self.tasks or not self.tasks[0]:
+                    raise ValueError("In non-benchmark mode, dataset must be provided in train config.")
+
         # If cleaning dirs, do it after parameters are loaded and validated
         if self.workflow_args.clean_dirs and not self.workflow_args.previewonly:
             self._clean_directories()
