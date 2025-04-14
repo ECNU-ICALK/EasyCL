@@ -1,4 +1,4 @@
-<!-- Logo -->
+8<!-- Logo -->
 <p align="center">
   <img src="assets/logo.png" alt="EasyCL Logo" style="width: 100%;" />
 </p>
@@ -83,7 +83,7 @@ Currently, we support datasets in both **alpaca** and **sharegpt** formats.
 
 #### Instruction Supervised Fine-tuning Dataset
 
-In instruction supervised fine-tuning, content from the `instruction` column will be concatenated with content from the `input` column as the human instruction, which means the human instruction will be `instruction\ninput`. And content from the `output` column will be the model's response.
+In instruction supervised fine-tuning, content from the `instruction` column will be concatenated with content from the `input` column as the human instruction, which means the human instruction will be `instruction\input`. And content from the `output` column will be the model's response.
 
 If specified, content from the `system` column will be used as the system prompt.
 
