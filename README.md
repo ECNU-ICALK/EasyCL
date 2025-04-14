@@ -1,4 +1,4 @@
-<!-- Logo -->
+8<!-- Logo -->
 <p align="center">
   <img src="assets/logo.png" alt="EasyCL Logo" style="width: 100%;" />
 </p>
