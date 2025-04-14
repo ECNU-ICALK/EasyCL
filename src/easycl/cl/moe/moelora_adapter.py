@@ -292,6 +292,7 @@ def init_moelora_adapter(
     model: "PreTrainedModel",
     model_args: "ModelArguments",
     finetuning_args: "FinetuningArguments",
+    cl_finetuning_args: "CLFinetuningArguments",
     is_trainable: bool,
 ) -> "PreTrainedModel":
     r"""
@@ -328,7 +329,7 @@ def init_moelora_adapter(
         _setup_freeze_tuning(model, finetuning_args, is_trainable, cast_trainable_params_to_fp32)
     elif finetuning_args.finetuning_type == "lora":
         model = _setup_moelora_tuning(
-            config, model, model_args, finetuning_args, finetuning_args, is_trainable, cast_trainable_params_to_fp32
+            config, model, model_args, finetuning_args, cl_finetuning_args, is_trainable, cast_trainable_params_to_fp32
         )
     else:
         raise NotImplementedError(f"Unknown finetuning type: {finetuning_args.finetuning_type}.")

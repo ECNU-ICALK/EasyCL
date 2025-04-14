@@ -122,6 +122,7 @@ def load_moelora_model(
     tokenizer: "PreTrainedTokenizer",
     model_args: "ModelArguments",
     finetuning_args: "FinetuningArguments",
+    cl_finetuning_args: "CLFinetuningArguments",
     is_trainable: bool = False,
     add_valuehead: bool = False,
 ) -> "PreTrainedModel":
@@ -176,6 +177,7 @@ def load_moelora_model(
         model=model,
         model_args=model_args,
         finetuning_args=finetuning_args,
+        cl_finetuning_args=cl_finetuning_args,
         is_trainable=is_trainable
     )
 

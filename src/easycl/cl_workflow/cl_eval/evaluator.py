@@ -5,12 +5,10 @@ import os
 import torch
 import copy
 import gc
-import yaml
 from collections import defaultdict
 from typing import Dict, List, Optional, Any, Tuple, Union
 from tqdm import tqdm
 from transformers import HfArgumentParser
-from llamafactory.extras import logging
 
 from llamafactory.eval.evaluator import Evaluator as BaseEvaluator
 from llamafactory.hparams import GeneratingArguments
@@ -26,8 +24,6 @@ from .adapters import (
 from easycl.hparams.parser import get_cl_eval_args
 from easycl.cl.moe.moelora_loader import load_moelora_model
 from easycl.cl.clmoe.clmoe_loader import load_clmoe_model
-
-logger = logging.get_logger(__name__)
 
 if is_vllm_available():
     from vllm import LLM, SamplingParams
@@ -102,7 +98,7 @@ class CLEvalEvaluator(BaseEvaluator):
                          else:
                               # Default or raise error, depending on expected behavior
                               self.cl_finetuning_args.expert_num = 2 # Example default
-                              print(f"警告: 未找到 expert_num 参数，cl-MoE 加载器可能需要它。使用默认值: {self.finetuning_args.expert_num}")
+                              print(f"警告: 未找到 expert_num 参数，cl-MoE 加载器可能需要它。使用默认值: {self.cl_finetuning_args.expert_num}")
                          # Similarly for task_embedding_dim if needed by loader
 
                 print(f"信息: 正在使用 load_clmoe_model 加载模型及 cl-MoE adapter: {self.model_args.adapter_name_or_path}")
@@ -218,40 +214,20 @@ class CLEvalEvaluator(BaseEvaluator):
 
     def _load_multi_adapter_config(self) -> None:
         """加载多adapter配置文件"""
-        # 获取配置文件基础路径 (无扩展名)
+        # 获取配置文件路径
         multi_adapter_dir = self.eval_args.multi_adapter_dir
-        config_path_base = os.path.join(multi_adapter_dir, "multiadapter_selected_config")
+        config_path = os.path.join(multi_adapter_dir, "multiadapter_selected_config.json")
         
-        self.adapter_config = {}
-        config_loaded = False
-        loaded_path = ""
-        # 优先尝试加载 .yaml 或 .yml 文件
-        for ext in ['.yaml', '.yml', '.json']:
-            config_path = config_path_base + ext
-            if os.path.exists(config_path):
-                try:
-                    with open(config_path, "r", encoding="utf-8") as f:
-                        if ext in ['.yaml', '.yml']:
-                             self.adapter_config = yaml.safe_load(f)
-                        else:
-                             self.adapter_config = json.load(f)
-                    config_loaded = True
-                    loaded_path = config_path
-                    logger.info_rank0(f"成功加载多Adapter配置文件: {loaded_path}")
-                    break
-                except yaml.YAMLError as e:
-                    logger.error(f"Error decoding YAML from multi-adapter config file: {config_path}. Error: {e}")
-                except json.JSONDecodeError as e:
-                    logger.error(f"Error decoding JSON from multi-adapter config file: {config_path}. Error: {e}")
-                except Exception as e:
-                    logger.error(f"Error loading multi-adapter config file {config_path}: {e}")
-
-        if not config_loaded:
-            raise FileNotFoundError(f"多Adapter配置文件未找到 (tried .yaml, .yml, .json): {config_path_base}")
-
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"多Adapter配置文件未找到: {config_path}")
+        
+        # 加载配置文件
+        with open(config_path, "r", encoding="utf-8") as f:
+            self.adapter_config = json.load(f)
+        
         # 验证配置文件格式
         if "task_name" not in self.adapter_config or "adapters" not in self.adapter_config:
-            raise ValueError(f"配置文件格式无效: {config_path_base}")
+            raise ValueError(f"配置文件格式无效: {config_path}")
         
         # 验证任务名称是否匹配
         if self.adapter_config["task_name"] != self.eval_args.task:
@@ -369,135 +345,17 @@ class CLEvalEvaluator(BaseEvaluator):
 
     def _load_dataset_options(self) -> Dict:
         """加载数据集选项配置"""
-        options_path_base = None
         # 首先尝试使用命令行参数指定的路径
         if hasattr(self.eval_args, "dataset_options") and self.eval_args.dataset_options:
-             # If a specific path is provided, use it directly (assume it includes extension)
-            options_path_base = self.eval_args.dataset_options
-            # Remove potential extension to try others
-            options_path_base, _ = os.path.splitext(options_path_base)
+            options_path = self.eval_args.dataset_options
         else:
-            # 如果未指定，则使用默认路径 (无扩展名)
-            options_path_base = os.path.join("./data", "dataset_options")
-
-        dataset_options = {}
-        loaded = False
-        for ext in ['.yaml', '.yml', '.json']:
-            options_path = options_path_base + ext
-            if os.path.exists(options_path):
-                try:
-                    with open(options_path, "r", encoding="utf-8") as f:
-                        if ext in ['.yaml', '.yml']:
-                            dataset_options = yaml.safe_load(f)
-                        else:
-                            dataset_options = json.load(f)
-                    logger.info_rank0(f"Successfully loaded dataset options from: {options_path}")
-                    loaded = True
-                    break
-                except yaml.YAMLError as e:
-                    logger.error(f"Error decoding YAML from dataset options file: {options_path}. Error: {e}")
-                except json.JSONDecodeError as e:
-                    logger.error(f"Error decoding JSON from dataset options file: {options_path}. Error: {e}")
-                except Exception as e:
-                    logger.error(f"Error loading dataset options file {options_path}: {e}")
-
-        if not loaded:
-             logger.warning(f"Dataset options file not found (tried .yaml, .yml, .json): {options_path_base}. Returning empty options.")
-             return {} # Return empty dict if no file found
-
-        return dataset_options
-
-    def _find_dataset_file(self, base_dir: Optional[str], task_name: str, suffix: str, subject_name: str) -> Optional[str]:
-        """
-        Helper function to find dataset files (_test.json or _dev.json) using multiple strategies.
-        Strategies (in order):
-        1. Benchmark mode with dataset_info.json
-        2. Benchmark mode with directory traversal
-        3. Original logic (direct lookup in base_dir or ./data)
-        """
-        file_path = None
-        filename_pattern = f"{subject_name}{suffix}" # e.g., agnews_test.json or agnews_dev.json
-
-        # --- Strategy 1: Benchmark mode with dataset_info.json ---
-        if base_dir and os.path.isdir(base_dir):
-            dataset_info_path = os.path.join(base_dir, "dataset_info.json")
-            if os.path.exists(dataset_info_path):
-                logger.info_rank0(f"Attempting to find {filename_pattern} using {dataset_info_path}")
-                try:
-                    with open(dataset_info_path, "r", encoding="utf-8") as f:
-                        dataset_info = json.load(f)
-                    
-                    # Handle potential naming mismatch (e.g., task 'agnews' vs key 'agnews_test')
-                    possible_keys = [
-                        task_name + suffix.replace('.json', ''), # e.g., agnews_test
-                        task_name # e.g., agnews
-                    ]
-                    
-                    found_key = None
-                    relative_file_name = None
-                    for key in possible_keys:
-                        if key in dataset_info and "file_name" in dataset_info[key]:
-                            relative_file_name = dataset_info[key]["file_name"]
-                            found_key = key
-                            logger.info_rank0(f"Found key '{found_key}' in dataset_info.json, file_name: '{relative_file_name}'")
-                            break
-
-                    if relative_file_name:
-                        potential_path = os.path.join(base_dir, relative_file_name)
-                        if os.path.exists(potential_path):
-                            logger.info_rank0(f"Found file via dataset_info.json: {potential_path}")
-                            file_path = potential_path
-                        else:
-                            logger.warning(f"File path from dataset_info.json ('{potential_path}') does not exist.")
-                    else:
-                        logger.warning(f"Task '{task_name}' or related keys not found or missing 'file_name' in {dataset_info_path}")
-
-                except (json.JSONDecodeError, IOError) as e:
-                    logger.error(f"Error reading or parsing {dataset_info_path}: {e}")
-                except Exception as e:
-                    logger.error(f"Unexpected error processing {dataset_info_path}: {e}")
-
-
-        # --- Strategy 2: Benchmark mode with directory traversal ---
-        if file_path is None and base_dir and os.path.isdir(base_dir):
-            logger.info_rank0(f"Attempting to find {filename_pattern} by traversing directory: {base_dir}")
-            found_files = []
-            # Use filename_pattern which includes the suffix directly
-            target_filename_search = filename_pattern
-            for root, _, files in os.walk(base_dir):
-                if target_filename_search in files:
-                    found_files.append(os.path.join(root, target_filename_search))
-
-            if len(found_files) == 1:
-                file_path = found_files[0]
-                logger.info_rank0(f"Found file via directory traversal: {file_path}")
-            elif len(found_files) > 1:
-                logger.warning(f"Found multiple files matching '{target_filename_search}' in {base_dir}: {found_files}. Using the first one: {found_files[0]}")
-                file_path = found_files[0] # Use first found as a fallback
-            else:
-                 logger.warning(f"File '{target_filename_search}' not found via directory traversal in {base_dir}")
-
-        # --- Strategy 3: Original logic (direct lookup) ---
-        if file_path is None:
-            logger.info_rank0(f"Attempting to find {filename_pattern} using original direct lookup logic.")
-            # Check in primary data directory (task_dir if set, else default to None)
-            if base_dir and os.path.isdir(base_dir):
-                potential_path = os.path.join(base_dir, filename_pattern)
-                if os.path.exists(potential_path):
-                     logger.info_rank0(f"Found file in primary directory: {potential_path}")
-                     file_path = potential_path
-
-            # Check in fallback data directory if not found yet
-            if file_path is None:
-                 fallback_data_dir = "./data" # Hardcoded fallback
-                 potential_path = os.path.join(fallback_data_dir, filename_pattern)
-                 if os.path.exists(potential_path):
-                     logger.info_rank0(f"Found file in fallback directory './data': {potential_path}")
-                     file_path = potential_path
-                 else:
-                      logger.warning(f"File '{filename_pattern}' not found in primary dir ('{base_dir}') or fallback dir ('./data').")
-
-        return file_path
+            # 如果未指定，则使用默认路径
+            options_path = os.path.join("./data", "dataset_options.json")
+        
+        if os.path.exists(options_path):
+            with open(options_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return {}
 
     @torch.inference_mode()
     def batch_inference(self, batch: List[Dict]) -> List[Dict]:
@@ -699,9 +557,6 @@ class CLEvalEvaluator(BaseEvaluator):
                         self.dataset_options,
                         self.eval_args.task
                     )
-                    # Truncate prediction at the first newline character
-                    if isinstance(result.get("prediction"), str) and "\\n" in result["prediction"]:
-                        result["prediction"] = result["prediction"].split("\\n", 1)[0]
                     outputs.append(result)
                 else:
                     outputs.append({"prediction": "", "is_correct": False, "match_type": "vllm_error"})
@@ -809,9 +664,6 @@ class CLEvalEvaluator(BaseEvaluator):
                     self.dataset_options,
                     self.eval_args.task
                 )
-                # Truncate prediction at the first newline character
-                if isinstance(result.get("prediction"), str) and "\\n" in result["prediction"]:
-                    result["prediction"] = result["prediction"].split("\\n", 1)[0]
                 outputs.append(result)
 
         # 确保输出长度与输入批次长度匹配
@@ -824,64 +676,37 @@ class CLEvalEvaluator(BaseEvaluator):
     
     def evaluate_custom_dataset(self) -> Dict:
         """评估自定义数据集"""
-        # 设置subject_name (基础任务名，例如从 'agnews_test' 提取 'agnews')
-        # task_name is like 'agnews', 'agnews_test', 'custom_task' etc.
-        # subject_name should be the base, e.g., 'agnews' or 'custom_task'
-        task_name = self.eval_args.task
-        self.subject_name = task_name.split("_test")[0].split("_dev")[0] # Get base name like 'agnews' or 'math'
-        logger.info_rank0(f"Evaluating task: {task_name} (Subject: {self.subject_name})")
-
-        # 设置数据目录 - 优先使用 task_dir 参数 (通常在benchmark模式下由CLWorkflow设置)
-        # If task_dir is not set (non-benchmark mode), base_dir will be None, triggering fallback logic in _find_dataset_file
-        base_dir = self.eval_args.task_dir
-        logger.info_rank0(f"Primary data directory for search (task_dir): {base_dir if base_dir else 'Not set (using fallback)'}")
-
-        # --- Find Test File ---
-        test_file_path = self._find_dataset_file(base_dir, task_name, "_test.json", self.subject_name)
-
-        if not test_file_path:
-            raise ValueError(f"Test dataset for subject '{self.subject_name}' (task: '{task_name}') could not be found using any strategy.")
-
-        logger.info_rank0(f"Loading test dataset from: {test_file_path}")
-        try:
-            with open(test_file_path, "r", encoding="utf-8") as f:
-                self.test_examples = json.load(f)
-                if isinstance(self.test_examples, dict): # Handle structure like {"examples": [...]}
-                    self.test_examples = self.test_examples.get("examples", self.test_examples)
-            logger.info_rank0(f"Successfully loaded {len(self.test_examples)} test examples.")
-        except Exception as e:
-             logger.error(f"Error loading test set file {test_file_path}: {e}")
-             raise ValueError(f"Could not load test set file: {test_file_path}") from e
-
-        # --- Find and Load Dev File (relative to Test File) ---
-        self.dev_examples = []
-        if self.eval_args.n_shot > 0:
-            test_file_dir = os.path.dirname(test_file_path)
-            dev_filename = f"{self.subject_name}_dev.json"
-            dev_file_path = os.path.join(test_file_dir, dev_filename)
-            logger.info_rank0(f"Searching for dev set for few-shot ({self.eval_args.n_shot}-shot) in directory: {test_file_dir}")
-
-            if os.path.exists(dev_file_path):
-                logger.info_rank0(f"Found dev set file: {dev_file_path}")
-                try:
-                    with open(dev_file_path, "r", encoding="utf-8") as f:
-                        loaded_dev_examples = json.load(f)
-                        if isinstance(loaded_dev_examples, dict): # Handle structure like {"examples": [...]}
-                            loaded_dev_examples = loaded_dev_examples.get("examples", loaded_dev_examples)
-                        self.dev_examples = loaded_dev_examples[:self.eval_args.n_shot]
-                    logger.info_rank0(f"Successfully loaded {len(self.dev_examples)} examples for {self.eval_args.n_shot}-shot evaluation.")
-                except Exception as e:
-                    logger.error(f"Error loading dev set file {dev_file_path}: {e}")
-                    logger.warning("Proceeding with zero-shot evaluation due to dev set loading error.")
-                    self.dev_examples = []
-            else:
-                logger.warning(f"Dev set file '{dev_filename}' not found in '{test_file_dir}'. Proceeding with zero-shot evaluation.")
-                self.dev_examples = []
+        # 设置subject_name
+        self.subject_name = self.eval_args.task.split("_")[0]
+        
+        # 设置数据目录
+        data_dir = "./data"
+        
+        # 加载few-shot样例（如果存在）
+        dev_file = os.path.join(data_dir, f"{self.subject_name}_dev.json")
+        if os.path.exists(dev_file) and self.eval_args.n_shot > 0:
+            print(f"\n加载 {self.eval_args.n_shot}-shot 示例，来源: {dev_file}")
+            with open(dev_file, "r", encoding="utf-8") as f:
+                self.dev_examples = json.load(f)
+                if isinstance(self.dev_examples, dict):
+                    self.dev_examples = self.dev_examples.get("examples", self.dev_examples)
+                self.dev_examples = self.dev_examples[:self.eval_args.n_shot]
+            print(f"成功加载 {len(self.dev_examples)} 个示例用于few-shot评估")
         else:
-            logger.info_rank0("n_shot is 0, proceeding with zero-shot evaluation.")
             self.dev_examples = []
+            if self.eval_args.n_shot > 0:
+                print(f"\n警告: {dev_file} 未找到，将执行zero-shot评估")
 
-
+        # 加载测试集
+        test_file = os.path.join(data_dir, f"{self.subject_name}_test.json")
+        if not os.path.exists(test_file):
+            raise ValueError(f"测试数据集未在 {test_file} 找到")
+        
+        with open(test_file, "r", encoding="utf-8") as f:
+            self.test_examples = json.load(f)
+            if isinstance(self.test_examples, dict):
+                self.test_examples = self.test_examples.get("examples", self.test_examples)
+        
         # 为测试样本添加索引（用于多adapter模式下的样本分配）
         for idx, example in enumerate(self.test_examples):
             example["index"] = idx
