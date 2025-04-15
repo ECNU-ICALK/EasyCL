@@ -1,8 +1,8 @@
 [中文](README_zh.md)
 
-# LLaMA Factory Continual Learning Workflow
+# EasyCL Continual Learning Workflow
 
-This directory contains the implementation for the one-click continual learning (CL) workflow in LLaMA Factory. It allows users to easily run sequential training and evaluation across multiple tasks using various CL strategies.
+This directory contains the implementation for the one-click continual learning (CL) workflow in EasyCL. It allows users to easily run sequential training and evaluation across multiple tasks using various CL strategies.
 
 ## Table of Contents
 
@@ -24,9 +24,9 @@ The `cl_workflow` script supports several execution modes:
 
 ## 2. Code Structure
 
-The main components within `src/llamafactory/cl_workflow` are:
+The main components within `src/easycl/cl_workflow` are:
 
-- **`cl_train_and_eval.py`**: The main entry point for the workflow (`llamafactory-cli cl_workflow`). It parses arguments, loads configurations, generates the necessary training and evaluation commands using `CLCommandGenerator`, and orchestrates their execution based on the selected `mode`.
+- **`cl_train_and_eval.py`**: The main entry point for the workflow (`easycl-cli cl_workflow`). It parses arguments, loads configurations, generates the necessary training and evaluation commands using `CLCommandGenerator`, and orchestrates their execution based on the selected `mode`.
 - **`evaluator.py`**: Contains the `CLEvaluator` class, responsible for managing the evaluation process across multiple CL tasks or specific evaluation modes (like 'single', 'multi_adapter'). It handles loading models/adapters and running evaluations for each task defined in `cl_tasks`.
 - **`cl_params_config.json`**: A crucial JSON configuration file that defines:
   - Supported CL methods (`cl_methods_registry`)
@@ -40,25 +40,25 @@ The main components within `src/llamafactory/cl_workflow` are:
 
 ## 3. Example Usage
 
-You can run the workflow using the `llamafactory-cli cl_workflow` command. You need to provide configuration files for training and/or evaluation parameters in JSON format.
+You can run the workflow using the `easycl-cli cl_workflow` command. You need to provide configuration files for training and/or evaluation parameters in YAML format.
 
 ### Common Parameters
 
-- **`--clean_dir`**: Clean the output directory before executing the workflow. If specified, all existing output files will be deleted.
-- **`--preview_only`**: Only preview the commands that would be executed without actually running them. This is useful for checking if the workflow configuration is correct.
+- **`--clean_dirs`**: Clean the output directory before executing the workflow. If specified, all existing output files will be deleted.
+- **`--previewonly`**: Only preview the commands that would be executed without actually running them. This is useful for checking if the workflow configuration is correct.
 
 ### Train Only
 
 ```bash
-llamafactory-cli cl_workflow --mode train_only --train_params ./configs/train_config.json
+easycl-cli cl_workflow --mode train_only --train_params ./example/train_examples/lora_example.yaml
 ```
 
-**Preview Result**: Executes training commands sequentially for tasks defined in `train_config_ewc.json`, applying parameter management between tasks.
+**Preview Result**: Executes training commands sequentially for tasks defined in `train_config.json`, applying parameter management between tasks.
 
 ### Evaluate Only
 
 ```bash
-llamafactory-cli cl_workflow --mode eval_only --eval_params ./configs/eval_config.json
+easycl-cli cl_workflow --mode eval_only --eval_params ./example/eval_examples/lora_eval.yaml
 ```
 
 **Preview Result**: Executes evaluation command(s) specified in `eval_config.json` (e.g., evaluating a specific fine-tuned model on `cl_tasks`).
@@ -66,9 +66,9 @@ llamafactory-cli cl_workflow --mode eval_only --eval_params ./configs/eval_confi
 ### Train Then Evaluate
 
 ```bash
-llamafactory-cli cl_workflow --mode train_then_eval \
-    --train_params ./configs/train_config_replay.json \
-    --eval_params ./configs/eval_config.json
+easycl-cli cl_workflow --mode train_then_eval \
+    --train_params ./example/train_examples/lora_example.yaml \
+    --eval_params ./example/eval_examples/lora_eval.yaml
 ```
 
 **Preview Result**: Executes training commands sequentially, then executes evaluation commands (evaluating base model and model after each task).
@@ -76,9 +76,9 @@ llamafactory-cli cl_workflow --mode train_then_eval \
 ### Full Workflow (Train, Evaluate, Calculate Metrics)
 
 ```bash
-llamafactory-cli cl_workflow --mode full_workflow \
-    --train_params ./configs/train_config.json \
-    --eval_params ./configs/eval_config.json
+easycl-cli cl_workflow --mode full_workflow \
+    --train_params ./example/train_examples/lora_example.yaml \
+    --eval_params ./example/eval_examples/lora_eval.yaml
 ```
 
 **Preview Result**: Executes training sequentially, then evaluates base/task models, and finally calculates and saves CL metrics (Last, Avg, BWT, FWT) to the evaluation output directory.

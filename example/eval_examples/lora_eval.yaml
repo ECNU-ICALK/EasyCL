@@ -1,0 +1,9 @@
+model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
+batch_size: 16
+cl_tasks: amazon
+template: llama3
+save_dir: saves/cl_eval_results
+
+# 多适配器评估参数
+eval_mode: single
+cl_tuning_type: lora

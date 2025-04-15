@@ -1,0 +1,287 @@
+{
+    "ApexAD2600Progressive_train": {
+        "file_name": "ApexAD2600Progressive/ApexAD2600Progressive_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "ApexAD2600Progressive_dev": {
+        "file_name": "ApexAD2600Progressive/ApexAD2600Progressive_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "ApexAD2600Progressive_test": {
+        "file_name": "ApexAD2600Progressive/ApexAD2600Progressive_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "CanonG3_train": {
+        "file_name": "CanonG3/CanonG3_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "CanonG3_dev": {
+        "file_name": "CanonG3/CanonG3_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "CanonG3_test": {
+        "file_name": "CanonG3/CanonG3_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "CanonPowerShotSD500_train": {
+        "file_name": "CanonPowerShotSD500/CanonPowerShotSD500_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "CanonPowerShotSD500_dev": {
+        "file_name": "CanonPowerShotSD500/CanonPowerShotSD500_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "CanonPowerShotSD500_test": {
+        "file_name": "CanonPowerShotSD500/CanonPowerShotSD500_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "CanonS100_train": {
+        "file_name": "CanonS100/CanonS100_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "CanonS100_dev": {
+        "file_name": "CanonS100/CanonS100_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "CanonS100_test": {
+        "file_name": "CanonS100/CanonS100_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "Computer_train": {
+        "file_name": "Computer/Computer_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "Computer_dev": {
+        "file_name": "Computer/Computer_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "Computer_test": {
+        "file_name": "Computer/Computer_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "CreativeLabsNomadJukeboxZenXtra40GB_train": {
+        "file_name": "CreativeLabsNomadJukeboxZenXtra40GB/CreativeLabsNomadJukeboxZenXtra40GB_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "CreativeLabsNomadJukeboxZenXtra40GB_dev": {
+        "file_name": "CreativeLabsNomadJukeboxZenXtra40GB/CreativeLabsNomadJukeboxZenXtra40GB_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "CreativeLabsNomadJukeboxZenXtra40GB_test": {
+        "file_name": "CreativeLabsNomadJukeboxZenXtra40GB/CreativeLabsNomadJukeboxZenXtra40GB_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "DiaperChamp_train": {
+        "file_name": "DiaperChamp/DiaperChamp_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "DiaperChamp_dev": {
+        "file_name": "DiaperChamp/DiaperChamp_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "DiaperChamp_test": {
+        "file_name": "DiaperChamp/DiaperChamp_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "HitachiRouter_train": {
+        "file_name": "HitachiRouter/HitachiRouter_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "HitachiRouter_dev": {
+        "file_name": "HitachiRouter/HitachiRouter_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "HitachiRouter_test": {
+        "file_name": "HitachiRouter/HitachiRouter_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "LinksysRouter_train": {
+        "file_name": "LinksysRouter/LinksysRouter_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "LinksysRouter_dev": {
+        "file_name": "LinksysRouter/LinksysRouter_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "LinksysRouter_test": {
+        "file_name": "LinksysRouter/LinksysRouter_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "MicroMP3_train": {
+        "file_name": "MicroMP3/MicroMP3_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "MicroMP3_dev": {
+        "file_name": "MicroMP3/MicroMP3_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "MicroMP3_test": {
+        "file_name": "MicroMP3/MicroMP3_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "NikonCoolpix4300_train": {
+        "file_name": "NikonCoolpix4300/NikonCoolpix4300_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "NikonCoolpix4300_dev": {
+        "file_name": "NikonCoolpix4300/NikonCoolpix4300_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "NikonCoolpix4300_test": {
+        "file_name": "NikonCoolpix4300/NikonCoolpix4300_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "Nokia6600_train": {
+        "file_name": "Nokia6600/Nokia6600_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "Nokia6600_dev": {
+        "file_name": "Nokia6600/Nokia6600_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "Nokia6600_test": {
+        "file_name": "Nokia6600/Nokia6600_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "Nokia6610_train": {
+        "file_name": "Nokia6610/Nokia6610_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "Nokia6610_dev": {
+        "file_name": "Nokia6610/Nokia6610_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "Nokia6610_test": {
+        "file_name": "Nokia6610/Nokia6610_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "Norton_train": {
+        "file_name": "Norton/Norton_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "Norton_dev": {
+        "file_name": "Norton/Norton_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "Norton_test": {
+        "file_name": "Norton/Norton_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "Router_train": {
+        "file_name": "Router/Router_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "Router_dev": {
+        "file_name": "Router/Router_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "Router_test": {
+        "file_name": "Router/Router_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "Speaker_train": {
+        "file_name": "Speaker/Speaker_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "Speaker_dev": {
+        "file_name": "Speaker/Speaker_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "Speaker_test": {
+        "file_name": "Speaker/Speaker_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "ipod_train": {
+        "file_name": "ipod/ipod_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "ipod_dev": {
+        "file_name": "ipod/ipod_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "ipod_test": {
+        "file_name": "ipod/ipod_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "laptop_train": {
+        "file_name": "laptop/laptop_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "laptop_dev": {
+        "file_name": "laptop/laptop_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "laptop_test": {
+        "file_name": "laptop/laptop_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "rest_train": {
+        "file_name": "rest/rest_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "rest_dev": {
+        "file_name": "rest/rest_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "rest_test": {
+        "file_name": "rest/rest_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    }
+} 

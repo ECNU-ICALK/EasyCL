@@ -37,7 +37,7 @@ USAGE = (
     + "| Commands:                                                         |\n"
     + "|   cl_train      train models with continual learning                |\n"
     + "|   cl_eval        evaluate models with continual learning           |\n"
-    + "|   cl-workflow   run continual learning workflow                 |\n"
+    + "|   cl_workflow   run continual learning workflow                 |\n"
     + "| Use 'easycl-cli <command> -h' for more information on a command.   |\n"
     + "-" * 70
 )
@@ -50,7 +50,7 @@ logger = logging.get_logger(__name__)
 class Command(str, Enum):
     CL_TRAIN = "cl_train"
     CL_EVAL = "cl_eval"
-    CL_WORKFLOW = "cl-workflow"
+    CL_WORKFLOW = "cl_workflow"
 
 
 def main():

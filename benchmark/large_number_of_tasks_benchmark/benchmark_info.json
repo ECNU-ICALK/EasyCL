@@ -1,0 +1,58 @@
+{
+    "large_number_of_tasks_benchmark": {
+        "description": "Large Number of Tasks Benchmark containing various NLP classification and NLI datasets.",
+        "orders": {
+            "order1": [
+                "MNLI",
+                "CB",
+                "WiC",
+                "COPA",
+                "QQP",
+                "BoolQA",
+                "RTE",
+                "IMDB",
+                "yelp",
+                "amazon",
+                "SST-2",
+                "dbpedia",
+                "agnews",
+                "MultiRC",
+                "yahoo"
+            ],
+            "order2": [
+                "MultiRC",
+                "BoolQA",
+                "WiC",
+                "MNLI",
+                "CB",
+                "COPA",
+                "QQP",
+                "RTE",
+                "IMDB",
+                "SST-2",
+                "dbpedia",
+                "agnews",
+                "yelp",
+                "amazon",
+                "yahoo"
+            ],
+            "order3": [
+                "yelp",
+                "amazon",
+                "MNLI",
+                "CB",
+                "COPA",
+                "QQP",
+                "RTE",
+                "IMDB",
+                "SST-2",
+                "dbpedia",
+                "agnews",
+                "yahoo",
+                "MultiRC",
+                "BoolQA",
+                "WiC"
+            ]
+        }
+    }
+}

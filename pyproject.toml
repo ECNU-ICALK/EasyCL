@@ -16,7 +16,7 @@ classifiers = [
 requires-python = ">=3.8"
 # Add llamafactory dependency
 dependencies = [
-    "llamafactory" # Add specific version if needed, e.g., "llamafactory>=0.7.0"
+    "llamafactory>=0.9.2" # Add specific version if needed, e.g., "llamafactory>=0.7.0"
 ]
 
 [tool.setuptools.packages.find]

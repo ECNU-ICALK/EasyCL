@@ -1,0 +1,62 @@
+{
+    "agnews_train": {
+        "file_name": "agnews/agnews_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "agnews_dev": {
+        "file_name": "agnews/agnews_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "agnews_test": {
+        "file_name": "agnews/agnews_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "amazon_train": {
+        "file_name": "amazon/amazon_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "amazon_dev": {
+        "file_name": "amazon/amazon_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "amazon_test": {
+        "file_name": "amazon/amazon_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "dbpedia_train": {
+        "file_name": "dbpedia/dbpedia_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "dbpedia_dev": {
+        "file_name": "dbpedia/dbpedia_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "dbpedia_test": {
+        "file_name": "dbpedia/dbpedia_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "yahoo_train": {
+        "file_name": "yahoo/yahoo_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "yahoo_dev": {
+        "file_name": "yahoo/yahoo_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "yahoo_test": {
+        "file_name": "yahoo/yahoo_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    }
+}

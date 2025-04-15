@@ -1,0 +1,28 @@
+{
+    "ABSACL": {
+        "description": "ABSACL benchmark for Aspect-Based Sentiment Analysis Classification",
+        "orders": {
+            "order1": [
+                "ApexAD2600Progressive",
+                "CanonG3",
+                "CanonPowerShotSD500",
+                "CanonS100",
+                "Computer",
+                "CreativeLabsNomadJukeboxZenXtra40GB",
+                "DiaperChamp",
+                "HitachiRouter",
+                "LinksysRouter",
+                "MicroMP3",
+                "NikonCoolpix4300",
+                "Nokia6600",
+                "Nokia6610",
+                "Norton",
+                "Router",
+                "Speaker",
+                "ipod",
+                "laptop",
+                "rest"
+            ]
+        }
+    }
+} 

@@ -1,0 +1,25 @@
+{
+    "LFPT5": {
+        "description": "LFPT5 benchmark",
+        "orders": {
+            "order1": [
+                "dbpedia",
+                "amazon",
+                "yahoo",
+                "agnews"
+            ],
+            "order2": [
+                "dbpedia",
+                "amazon",
+                "agnews",
+                "yahoo"
+            ],
+            "order3": [
+                "yahoo",
+                "amazon",
+                "agnews",
+                "dbpedia"
+            ]
+        }
+    }
+}

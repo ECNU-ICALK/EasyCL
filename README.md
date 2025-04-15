@@ -4,6 +4,7 @@
 </p>
 
 [ [English](README.md) | [中文](README_zh.md) ]
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 ## Table of Contents
 
@@ -15,11 +16,13 @@
   - [Alpaca Format](#alpaca-format)
   - [Sharegpt Format](#sharegpt-format)
   - [Continuous Learning Evaluation](#continuous-learning-evaluation)
+- [Benchmark Adaptation](#benchmark-adaptation)
+  - [Creating a Custom Benchmark](#creating-a-custom-benchmark)
 - [Workflow](#workflow)
   - [Train Only](#train-only)
   - [Evaluate Only](#evaluate-only)
   - [Train Then Evaluate](#train-then-evaluate)
-  - [Full Workflow](#full-workflow-train-evaluate-calculate-metrics)
+  - [Full Workflow (Train, Evaluate, Calculate Metrics)](#full-workflow-train-evaluate-calculate-metrics)
 - [License](#license)
 
 ## Introduction
@@ -46,17 +49,15 @@ For detailed implementation of the continual learning workflow, see [src/easycl/
 
 7. **I-LoRA (Interpolation-based LoRA)** - [View Implementation](src/easycl/cl/ilora/README.md) - [Analyzing and Reducing Catastrophic Forgetting in Parameter Efficient Tuning](https://arxiv.org/pdf/2402.18865)
 
-8. **MOE-LoRA (Mixture of Experts with LoRA)** - [View Implementation](src/easycl/cl/moelora/README.md) - [CoIN: A Benchmark of Continual Instruction Tuning for Multimodel Large Language Models](https://proceedings.neurips.cc/paper_files/paper/2024/file/6a45500d9eda640deed90d8a62742be5-Paper-Datasets_and_Benchmarks_Track.pdf)
+8. **CLMoE (Continual Learning Mixture of Experts with LoRA)** - [View Implementation](src/easycl/cl/clmoe/README.md) - [CL-MoE: Enhancing Multimodal Large Language Model with Dual Momentum Mixture-of-Experts for Continual Visual Question Answering](https://arxiv.org/pdf/2503.00413)
 
 9. **ABSCL (ABSA LLM-CL)** - [View Implementation](src/easycl/cl/abscl/README.md) - [Boosting Large Language Models with Continual Learning for Aspect-based Sentiment Analysis](https://arxiv.org/pdf/2405.05496)
 
 10. **Dynamic ConPet** - [View Implementation](src/easycl/cl/dynamic_conpet/README.md) - [ConPET: Continual Parameter-Efficient Tuning for Large Language Models](https://arxiv.org/pdf/2309.14763)
 
-11. **CLIT-MoE (Continual Learning with Task-specific MoE)** - [View Implementation](src/easycl/cl/clmoe/README.md) - [CL-MoE: Enhancing Multimodal Large Language Model with Dual Momentum Mixture-of-Experts for Continual Visual Question Answering](https://arxiv.org/pdf/2503.00413)
+11. **Self-Synthesized Rehearsal (SSR)** - [View Implementation](src/easycl/cl/ssr/README.md) - [Mitigating catastrophic forgetting in large language models with self-synthesized rehearsal](https://arxiv.org/pdf/2403.01244)
 
-12. **Self-Synthesized Rehearsal (SSR)** - [View Implementation](src/easycl/cl/ssr/README.md) - [Mitigating catastrophic forgetting in large language models with self-synthesized rehearsal](https://arxiv.org/pdf/2403.01244)
-
-13. **Pseudo Replay** - [View Implementation](src/easycl/cl/pseudo_replay/README.md) - [Experience replay for continual learning](https://proceedings.neurips.cc/paper_files/paper/2019/file/fa7cdfad1a5aaf8370ebeda47a1ff1c3-Paper.pdf)
+12. **Pseudo Replay** - [View Implementation](src/easycl/cl/pseudo_replay/README.md) - [Experience replay for continual learning](https://proceedings.neurips.cc/paper_files/paper/2019/file/fa7cdfad1a5aaf8370ebeda47a1ff1c3-Paper.pdf)
 
 For more details about the continual learning methods, see [src/easycl/cl/README.md](src/easycl/cl/README.md).
 
@@ -65,9 +66,9 @@ For more details about the continual learning methods, see [src/easycl/cl/README
 ```bash
 git clone https://github.com/ECNU-ICALK/EasyCL.git
 cd EasyCL
-pip install -e .
+pip install -e . --no-deps
 ```
-Note that if you already have LLaMA-Factory installed in your environment, you may need to uninstall the existing one and perform the installation again.
+Note that if you already have LLaMA-Factory or an older version of EasyCL installed in your environment, you may need to uninstall the existing one and perform the installation again.
 
 ## Dataset Format Requirements
 
@@ -181,20 +182,65 @@ If you need to use continuous learning evaluation, you need to register dataset 
 
 This configuration allows EasyCL to properly evaluate model performance on classification tasks during continuous learning.
 
+## Benchmark Adaptation
+
+Our framework can automatically handle the training and evaluation of benchmarks, supporting switching between multiple task orders. This makes it easier to reproduce and compare the effects of different continual learning methods on standard datasets.
+
+We currently support the following three commonly used benchmarks:
+
+1. **LFPT5** - [Lfpt5: A unified framework for lifelong few-shot language learning based on prompt tuning of t5](https://arxiv.org/pdf/2110.07298)
+2. **Large Number of Tasks Benchmark** - [Orthogonal subspace learning for language model continual learning](https://arxiv.org/pdf/2310.14152)
+3. **ABSACL (Aspect-based Sentiment Analysis Continual Learning)** - [Adapting bert for continual learning of a sequence of aspect sentiment classification tasks](https://arxiv.org/pdf/2112.03271)
+
+You can use the following command to run benchmark evaluations (Benchmark evaluation currently only supports running in `full_workflow` mode):
+
+```bash
+easycl-cli cl_workflow --mode full_workflow \\
+    --train_params ./example/train_examples/lora_example.yaml \\
+    --eval_params ./example/eval_examples/lora_eval.yaml \\
+    --benchmark ABSACL --benchmark_order order1 --benchmark_dir ./benchmark/ABSACL
+```
+
+**Note:**
+* Before running a benchmark, ensure that the corresponding benchmark data is stored in the directory specified by `--benchmark_dir` as required.
+* Each benchmark needs to maintain a `benchmark_info.json` file to register the benchmark name, define different task orders, and specify the dataset information required for each task.
+* Datasets involved in the benchmark need to be registered in the `dataset_info.json` in the benchmark directory and `dataset_options.json` (if classification tasks need evaluation) in the project root directory.
+
+### Creating a Custom Benchmark
+
+If you wish to use your own benchmark, please follow these steps:
+
+1. **Prepare Datasets:**
+   * Ensure your datasets conform to the **Alpaca** or **ShareGPT** format described in [Dataset Format Requirements](#dataset-format-requirements).
+   * Organize the data for each task separately.
+2. **Organize Benchmark Directory:**
+   * Create a new folder under the `benchmark` directory, named after your benchmark (e.g., `my_custom_benchmark`).
+   * Place the corresponding data files within this folder according to your task division.
+3. **Register Dataset Information:**
+   * In the `dataset_info.json` file at the project root, add descriptions for each dataset used in your benchmark. Refer to the examples in the [Data Format](#data-format) section.
+   * Register dataset options in the `dataset_options.json` file at the project root. Refer to the examples in the [Continuous Learning Evaluation](#continuous-learning-evaluation) section.
+4. **Create `benchmark_info.json`:**
+   * In your created benchmark directory (e.g., `benchmark/my_custom_benchmark`), create a `benchmark_info.json` file.
+   * In this file, define your benchmark name, different task orders, and specify the dataset names corresponding to each task within each order (these names should match those registered in `dataset_info.json`). You can refer to the structure of existing benchmarks (e.g., `benchmark/ABSACL/benchmark_info.json`).
+5. **Run Benchmark:**
+   * You can now run your custom benchmark using the `easycl-cli` command with the `--benchmark <YourBenchmarkName>` and `--benchmark_dir ./benchmark/<YourBenchmarkDirectory>` arguments.
+
 ## Workflow
+
+To facilitate one-click training via the command line, we have implemented a Command-Line Interface (CLI) for training. You can use various modes for training and evaluation, and it will automatically set some required parameter mappings according to the settings in `src/easycl/cl_workflow/cl_params_config.json`. We currently support four training workflows: Train Only, Evaluate Only, Train Then Evaluate, and Full Workflow (Train, Evaluate, Calculate Metrics). You can use the `--previewonly` flag to preview commands without running them, and use `clean_dirs` to automatically clean output paths before running commands.
 
 ### Train Only
 
 ```bash
-easycl-cli cl_workflow --mode train_only --train_params ./configs/train_config.json
+easycl-cli cl_workflow --mode train_only --train_params ./example/train_examples/lora_example.yaml
 ```
 
-**Preview Result**: Executes training commands sequentially for tasks defined in `train_config_ewc.json`, applying parameter management between tasks.
+**Preview Result**: Executes training commands sequentially for tasks defined in `train_config.json`, applying parameter management between tasks.
 
 ### Evaluate Only
 
 ```bash
-easycl-cli cl_workflow --mode eval_only --eval_params ./configs/eval_config.json
+easycl-cli cl_workflow --mode eval_only --eval_params ./example/eval_examples/lora_eval.yaml
 ```
 
 **Preview Result**: Executes evaluation command(s) specified in `eval_config.json` (e.g., evaluating a specific fine-tuned model on `cl_tasks`).
@@ -203,8 +249,8 @@ easycl-cli cl_workflow --mode eval_only --eval_params ./configs/eval_config.json
 
 ```bash
 easycl-cli cl_workflow --mode train_then_eval \
-    --train_params ./configs/train_config_replay.json \
-    --eval_params ./configs/eval_config.json
+    --train_params ./example/train_examples/lora_example.yaml \
+    --eval_params ./example/eval_examples/lora_eval.yaml
 ```
 
 **Preview Result**: Executes training commands sequentially, then executes evaluation commands (evaluating base model and model after each task).
@@ -213,8 +259,8 @@ easycl-cli cl_workflow --mode train_then_eval \
 
 ```bash
 easycl-cli cl_workflow --mode full_workflow \
-    --train_params ./configs/train_config.json \
-    --eval_params ./configs/eval_config.json
+    --train_params ./example/train_examples/lora_example.yaml \
+    --eval_params ./example/eval_examples/lora_eval.yaml
 ```
 
 **Preview Result**: Executes training sequentially, then evaluates base/task models, and finally calculates and saves CL metrics (Last, Avg, BWT, FWT) to the evaluation output directory.

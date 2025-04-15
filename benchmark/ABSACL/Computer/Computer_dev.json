@@ -1,0 +1,177 @@
+[
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " The monitor works very well with a sharp and bright display . term:  display",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " The only negative thing about this was the instructions for adjusting the display were not very clear and it took a little time to figure out how to do it . term: instructions",
+        "output": "negative"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " While upgrading the memory the keyboard connector broke . term: keyboard connector",
+        "output": "negative"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " I 'm not very happy with this machine or Acer . term:  Acer",
+        "output": "negative"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " I 'm not very happy with this machine or Acer . term: machine",
+        "output": "negative"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " I would not recommend this or any Acer product to anyone except perhaps my ex . term: Acer product",
+        "output": "negative"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " Changing brightness is easy , with four presets and one user changeable -LRB- I leave that at minimum brightness for at night -RRB- . term: brightness",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " The screen is a very pleasing matte , and the colors are great . term:  colors",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " The screen is a very pleasing matte , and the colors are great . term: screen",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " I have used this monitor for a few months and have had no problems . term: monitor",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " It has good color and price was great . term:  price",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " It has good color and price was great . term: color",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " Fantastic display ... do n't understand why this model is n't available anymore . term: display",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " Bright , vivid , clean lines , wide viewing angle , and best of all - great price ! term:  viewing angle",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " Bright , vivid , clean lines , wide viewing angle , and best of all - great price ! term:  price",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " Bright , vivid , clean lines , wide viewing angle , and best of all - great price ! term: lines",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " It was worth the wait because AG Neovo 's standout 17 '' monitor has all this and more . term: AG Neovo 's standout 17 '' monitor",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " The contrast , crispness , and readability from even the most extreme viewing angles ca n't be beat . term:  crispness",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " The contrast , crispness , and readability from even the most extreme viewing angles ca n't be beat . term: contrast",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " The contrast , crispness , and readability from even the most extreme viewing angles ca n't be beat . term:  readability",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " The contrast , crispness , and readability from even the most extreme viewing angles ca n't be beat . term:  viewing angles",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " When the Matrox G550 Dual-DVI card comes out , I 'll consider purchasing one more of these super displays . term: displays",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " Expensive , but for us -- well worth it . term: Expensive",
+        "output": "negative"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " The changing colors help to tell , with a quick glance . term: colors",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " The idea of this device is great : it picks up a 5-day weather forecast from AccuWeather and displays the key elements on its screen . term: device",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " The replacement unit had a problem too : the little switch on the bottom was n't working properly , making it impossible to select among city forecasts in my area . term: switch",
+        "output": "negative"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " So if you 're game for a little fiddling , you may be very pleased with this 5-day forecaster . term: 5-day forecaster",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " This product did not work at all . term: product",
+        "output": "negative"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " I spend 10 hours\\/day in a VNC session with dark colors ; the colors and brightness change across the panel when I look from the center to the corner . term:  brightness",
+        "output": "negative"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " I spend 10 hours\\/day in a VNC session with dark colors ; the colors and brightness change across the panel when I look from the center to the corner . term: colors",
+        "output": "negative"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " For my work this panel is unusable . term: panel",
+        "output": "negative"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " Others may have better luck , but I have never seen a flat-panel with such horrible viewing angles . term: viewing angles",
+        "output": "negative"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " These monitors are great for the price . term: monitors",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " These monitors are great for the price . term:  price",
+        "output": "positive"
+    },
+    {
+        "instruction": "Given a Sentence and a aspect term, you should give a corresponding polarity. The format is 'terms: polarity'.",
+        "input": " Shipping was fast and they are very easy to set up . term: Shipping",
+        "output": "positive"
+    }
+]

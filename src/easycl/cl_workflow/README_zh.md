@@ -1,8 +1,8 @@
 [English](README.md)
 
-# LLaMA Factory 持续学习工作流
+# EasyCL 持续学习工作流
 
-该目录包含 LLaMA Factory 中一键式持续学习 (CL) 工作流的实现。它允许用户使用各种 CL 策略，轻松地在多个任务上运行顺序训练和评估。
+该目录包含 EasyCL 中一键式持续学习 (CL) 工作流的实现。它允许用户使用各种 CL 策略，轻松地在多个任务上运行顺序训练和评估。
 
 ## 目录
 
@@ -24,9 +24,9 @@
 
 ## 2. 代码结构
 
-`src/llamafactory/cl_workflow` 内的主要组件包括：
+`src/easycl/cl_workflow` 内的主要组件包括：
 
-- **`cl_train_and_eval.py`**: 工作流的主要入口点 (`llamafactory-cli cl_workflow`)。它解析参数，加载配置，使用 `CLCommandGenerator` 生成必要的训练和评估命令，并根据所选的 `mode` 来协调执行。
+- **`cl_train_and_eval.py`**: 工作流的主要入口点 (`easycl-cli cl_workflow`)。它解析参数，加载配置，使用 `CLCommandGenerator` 生成必要的训练和评估命令，并根据所选的 `mode` 来协调执行。
 - **`evaluator.py`**: 包含 `CLEvaluator` 类，负责管理跨多个 CL 任务或特定评估模式（如 'single', 'multi_adapter'）的评估过程。它处理加载模型/适配器，并为 `cl_tasks` 中定义的每个任务运行评估。
 - **`cl_params_config.json`**: 一个关键的 JSON 配置文件，定义了：
   - 支持的 CL 方法 (`cl_methods_registry`)
@@ -40,25 +40,25 @@
 
 ## 3. 示例用法
 
-您可以使用 `llamafactory-cli cl_workflow` 命令运行工作流。您需要以 JSON 格式提供训练和/或评估参数的配置文件。
+您可以使用 `easycl-cli cl_workflow` 命令运行工作流。您需要以 YAML 格式提供训练和/或评估参数的配置文件。
 
 ### 常用参数
 
-- **`--clean_dir`**: 在执行工作流之前清理输出目录。如果指定此参数，将删除所有现有的输出文件。
-- **`--preview_only`**: 仅预览将要执行的命令，而不实际执行它们。这对于检查工作流配置是否正确很有用。
+- **`--clean_dirs`**: 在执行工作流之前清理输出目录。如果指定此参数，将删除所有现有的输出文件。
+- **`--previewonly`**: 仅预览将要执行的命令，而不实际执行它们。这对于检查工作流配置是否正确很有用。
 
 ### 仅训练
 
 ```bash
-llamafactory-cli cl_workflow --mode train_only --train_params ./configs/train_config.json
+easycl-cli cl_workflow --mode train_only --train_params ./example/train_examples/lora_example.yaml
 ```
 
-**预览结果**: 顺序执行 `train_config_ewc.json` 中定义的任务的训练命令，并在任务之间应用参数管理。
+**预览结果**: 顺序执行 `train_config.json` 中定义的任务的训练命令，并在任务之间应用参数管理。
 
 ### 仅评估
 
 ```bash
-llamafactory-cli cl_workflow --mode eval_only --eval_params ./configs/eval_config.json
+easycl-cli cl_workflow --mode eval_only --eval_params ./example/eval_examples/lora_eval.yaml
 ```
 
 **预览结果**: 执行 `eval_config.json` 中指定的评估命令（例如，在 `cl_tasks` 上评估特定的微调模型）。
@@ -66,9 +66,9 @@ llamafactory-cli cl_workflow --mode eval_only --eval_params ./configs/eval_confi
 ### 训练后评估
 
 ```bash
-llamafactory-cli cl_workflow --mode train_then_eval \
-    --train_params ./configs/train_config.json \
-    --eval_params ./configs/eval_config.json
+easycl-cli cl_workflow --mode train_then_eval \
+    --train_params ./example/train_examples/lora_example.yaml \
+    --eval_params ./example/eval_examples/lora_eval.yaml
 ```
 
 **预览结果**: 顺序执行训练命令，然后执行评估命令（评估基础模型和每个任务后的模型）。
@@ -76,9 +76,9 @@ llamafactory-cli cl_workflow --mode train_then_eval \
 ### 完整工作流 (训练、评估、计算指标)
 
 ```bash
-llamafactory-cli cl_workflow --mode full_workflow \
-    --train_params ./configs/train_config.json \
-    --eval_params ./configs/eval_config.json
+easycl-cli cl_workflow --mode full_workflow \
+    --train_params ./example/train_examples/lora_example.yaml \
+    --eval_params ./example/eval_examples/lora_eval.yaml
 ```
 
 **预览结果**: 顺序执行持续学习训练，然后评估基础/任务模型，最后计算 CL 指标（Last, Avg, BWT, FWT）并保存到评估输出目录。

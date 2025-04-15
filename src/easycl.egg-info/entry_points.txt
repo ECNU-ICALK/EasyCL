@@ -1,2 +1,0 @@
-[console_scripts]
-easycl-cli = easycl.cli.cli:main

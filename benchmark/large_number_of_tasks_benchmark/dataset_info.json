@@ -1,0 +1,227 @@
+{
+    "agnews_train": {
+        "file_name": "agnews/agnews_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "agnews_dev": {
+        "file_name": "agnews/agnews_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "agnews_test": {
+        "file_name": "agnews/agnews_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "amazon_train": {
+        "file_name": "amazon/amazon_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "amazon_dev": {
+        "file_name": "amazon/amazon_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "amazon_test": {
+        "file_name": "amazon/amazon_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "BoolQA_train": {
+        "file_name": "BoolQA/BoolQA_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "BoolQA_dev": {
+        "file_name": "BoolQA/BoolQA_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "BoolQA_test": {
+        "file_name": "BoolQA/BoolQA_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "CB_train": {
+        "file_name": "CB/CB_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "CB_dev": {
+        "file_name": "CB/CB_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "CB_test": {
+        "file_name": "CB/CB_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "COPA_train": {
+        "file_name": "COPA/COPA_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "COPA_dev": {
+        "file_name": "COPA/COPA_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "COPA_test": {
+        "file_name": "COPA/COPA_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "dbpedia_train": {
+        "file_name": "dbpedia/dbpedia_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "dbpedia_dev": {
+        "file_name": "dbpedia/dbpedia_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "dbpedia_test": {
+        "file_name": "dbpedia/dbpedia_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "IMDB_train": {
+        "file_name": "IMDB/IMDB_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "IMDB_dev": {
+        "file_name": "IMDB/IMDB_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "IMDB_test": {
+        "file_name": "IMDB/IMDB_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "MNLI_train": {
+        "file_name": "MNLI/MNLI_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "MNLI_dev": {
+        "file_name": "MNLI/MNLI_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "MNLI_test": {
+        "file_name": "MNLI/MNLI_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "MultiRC_train": {
+        "file_name": "MultiRC/MultiRC_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "MultiRC_dev": {
+        "file_name": "MultiRC/MultiRC_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "MultiRC_test": {
+        "file_name": "MultiRC/MultiRC_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "QQP_train": {
+        "file_name": "QQP/QQP_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "QQP_dev": {
+        "file_name": "QQP/QQP_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "QQP_test": {
+        "file_name": "QQP/QQP_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "RTE_train": {
+        "file_name": "RTE/RTE_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "RTE_dev": {
+        "file_name": "RTE/RTE_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "RTE_test": {
+        "file_name": "RTE/RTE_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "SST-2_train": {
+        "file_name": "SST-2/SST-2_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "SST-2_dev": {
+        "file_name": "SST-2/SST-2_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "SST-2_test": {
+        "file_name": "SST-2/SST-2_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "WiC_train": {
+        "file_name": "WiC/WiC_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "WiC_dev": {
+        "file_name": "WiC/WiC_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "WiC_test": {
+        "file_name": "WiC/WiC_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "yahoo_train": {
+        "file_name": "yahoo/yahoo_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "yahoo_dev": {
+        "file_name": "yahoo/yahoo_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "yahoo_test": {
+        "file_name": "yahoo/yahoo_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    },
+    "yelp_train": {
+        "file_name": "yelp/yelp_train.json",
+        "formatting": "alpaca",
+        "split": "train"
+    },
+    "yelp_dev": {
+        "file_name": "yelp/yelp_dev.json",
+        "formatting": "alpaca",
+        "split": "dev"
+    },
+    "yelp_test": {
+        "file_name": "yelp/yelp_test.json",
+        "formatting": "alpaca",
+        "split": "test"
+    }
+}

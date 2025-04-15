@@ -12,88 +12,88 @@
   "cl_method_requirements": {
     "description": "Specifies parameter requirements for each CL method.",
     "ewc": {
-      "needs_task_id": false,
+      "needs_task_id": true,
       "needs_prev_model":true,
       "needs_prev_data": true,
-      "needs_replay_list": false,
+      "needs_replay_list": true,
       "needs_adapter_name_or_path": true
     },
     "lwf": {
       "needs_task_id": true,
       "needs_prev_model": true,
-      "needs_prev_data": false,
-      "needs_replay_list": false,
+      "needs_prev_data": true,
+      "needs_replay_list": true,
       "needs_adapter_name_or_path": true
     },
     "replay": {
-      "needs_task_id": false,
-      "needs_prev_model": false,
-      "needs_prev_data": false,
+      "needs_task_id": true,
+      "needs_prev_model": true,
+      "needs_prev_data": true,
       "needs_replay_list": true,
       "needs_adapter_name_or_path": true
     },
     "gem": {
-      "needs_task_id": false,
-      "needs_prev_model": false,
-      "needs_prev_data": false,
+      "needs_task_id": true,
+      "needs_prev_model": true,
+      "needs_prev_data": true,
       "needs_replay_list": true,
       "needs_adapter_name_or_path": true
     },
     "lamol": {
-      "needs_task_id": false,
+      "needs_task_id": true,
       "needs_prev_model": true,
-      "needs_prev_data": false,
-      "needs_replay_list": false,
+      "needs_prev_data": true,
+      "needs_replay_list": true,
       "needs_adapter_name_or_path": true
     },
     "olora": {
       "needs_task_id": true,
-      "needs_prev_model": false,
-      "needs_prev_data": false,
-      "needs_replay_list": false,
+      "needs_prev_model": true,
+      "needs_prev_data": true,
+      "needs_replay_list": true,
       "needs_shared_paths": ["olora_history_path"],
-      "needs_adapter_name_or_path": true
+      "needs_adapter_name_or_path": false
     },
     "ilora": {
       "needs_task_id": true,
       "needs_prev_model": true,
-      "needs_prev_data": false,
-      "needs_replay_list": false,
+      "needs_prev_data": true,
+      "needs_replay_list": true,
       "needs_adapter_name_or_path": true
     },
     "ssr": {
       "needs_task_id": true,
       "needs_prev_model": true,
-      "needs_prev_data": false,
+      "needs_prev_data": true,
       "needs_replay_list": true,
       "needs_shared_paths": ["pseudo_samples_dir"],
       "needs_adapter_name_or_path": true
     },
     "abscl": {
       "needs_task_id": true,
-      "needs_prev_model": false,
-      "needs_prev_data": false,
+      "needs_prev_model": true,
+      "needs_prev_data": true,
       "needs_replay_list": true,
       "needs_adapter_name_or_path": false
     },
     "moe": {
       "needs_task_id": true,
-      "needs_prev_model": false,
-      "needs_prev_data": false,
-      "needs_replay_list": false,
+      "needs_prev_model": true,
+      "needs_prev_data": true,
+      "needs_replay_list": true,
       "needs_adapter_name_or_path": true
     },
     "cl_moe": {
       "needs_task_id": true,
       "needs_prev_model": true,
-      "needs_prev_data": false,
-      "needs_replay_list": false,
+      "needs_prev_data": true,
+      "needs_replay_list": true,
       "needs_adapter_name_or_path": true
     },
     "dynamic_conpet": {
       "needs_task_id": true,
-      "needs_prev_model": false,
-      "needs_prev_data": false,
+      "needs_prev_model": true,
+      "needs_prev_data": true,
       "needs_replay_list": true,
       "needs_adapter_name_or_path": false
     }

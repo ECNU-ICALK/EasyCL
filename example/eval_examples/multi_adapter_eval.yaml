@@ -1,0 +1,12 @@
+model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
+batch_size: 16
+cl_tasks: amazon
+template: llama3
+save_dir: saves/cl_eval_results
+
+
+# multi_adapter evaluate option
+eval_mode: multi_adapter
+use_abscl_selector: true
+multi_adapter_dir: saves/multi_adapter_results
+cl_tuning_type: lora
