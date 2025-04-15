@@ -24,6 +24,9 @@ from .adapters import (
 from easycl.hparams.parser import get_cl_eval_args
 from easycl.cl.moe.moelora_loader import load_moelora_model
 from easycl.cl.clmoe.clmoe_loader import load_clmoe_model
+from llamafactory.extras.logging import get_logger # Import logger
+
+logger = get_logger(__name__) # Initialize logger for this module
 
 if is_vllm_available():
     from vllm import LLM, SamplingParams
@@ -343,6 +346,45 @@ class CLEvalEvaluator(BaseEvaluator):
         # 默认使用CustomDatasetAdapter
         return CustomDatasetAdapter()
 
+    def _find_data_file(self, filename: str) -> Optional[str]:
+        """Finds the data file, handling benchmark mode structure."""
+        # Check if in benchmark mode
+        is_benchmark = getattr(self.eval_args, 'is_benchmark_mode', False)
+        benchmark_root = getattr(self.eval_args, 'benchmark_dir_internal', None)
+
+        if is_benchmark and benchmark_root:
+            # Benchmark mode: Look inside benchmark_root / subject_name / filename
+            if not hasattr(self, 'subject_name') or not self.subject_name:
+                 logger.error("Subject name not set when trying to find data file in benchmark mode.")
+                 return None
+            benchmark_data_path = os.path.join(benchmark_root, self.subject_name, filename)
+            if os.path.exists(benchmark_data_path):
+                logger.info(f"[Benchmark Mode] Found data file: {benchmark_data_path}") # 英文日志
+                return benchmark_data_path
+            else:
+                logger.warning(f"[Benchmark Mode] Data file not found: {benchmark_data_path}") # 英文日志
+                return None
+        else:
+            # Standard mode: Check task_dir then fallback to ./data
+            task_dir = getattr(self.eval_args, "task_dir", "./data") # Get task_dir or default
+
+            # Try in task_dir first
+            path_in_task_dir = os.path.join(task_dir, filename)
+            if os.path.exists(path_in_task_dir):
+                logger.info(f"[Standard Mode] Found data file in task_dir: {path_in_task_dir}") # 英文日志
+                return path_in_task_dir
+            else:
+                # Fallback to ./data (only if task_dir is not already './data')
+                if os.path.abspath(task_dir) != os.path.abspath("./data"):
+                    path_in_data_dir = os.path.join("./data", filename)
+                    if os.path.exists(path_in_data_dir):
+                        logger.info(f"[Standard Mode] Found data file in fallback ./data: {path_in_data_dir}") # 英文日志
+                        return path_in_data_dir
+
+            # If not found in either location in standard mode
+            logger.warning(f"[Standard Mode] Data file '{filename}' not found in task_dir '{task_dir}' or fallback './data'.") # 英文日志
+            return None
+
     def _load_dataset_options(self) -> Dict:
         """加载数据集选项配置"""
         # 首先尝试使用命令行参数指定的路径
@@ -658,6 +700,12 @@ class CLEvalEvaluator(BaseEvaluator):
             
             # 处理每个预测结果
             for j, (pred, example) in enumerate(zip(predictions, batch[i:i + self.eval_args.batch_size])):
+                # Truncate prediction at the first newline character
+                if '\n' in pred:
+                    pred = pred.split('\n', 1)[0].strip() # Split once and take the first part, strip again
+                else:
+                    pred = pred.strip() # Ensure stripping even if no newline
+
                 result = self.adapter.process_result(
                     pred,
                     example,
@@ -679,34 +727,56 @@ class CLEvalEvaluator(BaseEvaluator):
         # 设置subject_name
         self.subject_name = self.eval_args.task.split("_")[0]
         
-        # 设置数据目录
-        data_dir = "./data"
-        
-        # 加载few-shot样例（如果存在）
-        dev_file = os.path.join(data_dir, f"{self.subject_name}_dev.json")
-        if os.path.exists(dev_file) and self.eval_args.n_shot > 0:
-            print(f"\n加载 {self.eval_args.n_shot}-shot 示例，来源: {dev_file}")
+        # --- Updated data directory and file path logic ---
+        # task_dir = getattr(self.eval_args, "task_dir", "./data") # Removed, logic moved to find_data_file
+        # data_dir = "./data" # Removed hardcoded path
+
+        # Helper function to find file path - MOVED TO CLASS METHOD: _find_data_file
+        # def find_data_file(filename):
+        #     ...
+
+        # Load few-shot examples if they exist
+        dev_filename = f"{self.subject_name}_dev.json"
+        # dev_file = find_data_file(dev_filename) # Use class method
+        dev_file = self._find_data_file(dev_filename)
+
+        if dev_file and self.eval_args.n_shot > 0:
+            logger.info(f"\nLoading {self.eval_args.n_shot}-shot examples from: {dev_file}") # 英文日志
             with open(dev_file, "r", encoding="utf-8") as f:
                 self.dev_examples = json.load(f)
                 if isinstance(self.dev_examples, dict):
                     self.dev_examples = self.dev_examples.get("examples", self.dev_examples)
                 self.dev_examples = self.dev_examples[:self.eval_args.n_shot]
-            print(f"成功加载 {len(self.dev_examples)} 个示例用于few-shot评估")
+            logger.info(f"Successfully loaded {len(self.dev_examples)} examples for few-shot evaluation") # 英文日志
         else:
             self.dev_examples = []
             if self.eval_args.n_shot > 0:
-                print(f"\n警告: {dev_file} 未找到，将执行zero-shot评估")
+                logger.warning(f"\nWarning: Dev file '{dev_filename}' not found in '{task_dir}' or './data'. Performing zero-shot evaluation.") # 英文日志
 
-        # 加载测试集
-        test_file = os.path.join(data_dir, f"{self.subject_name}_test.json")
-        if not os.path.exists(test_file):
-            raise ValueError(f"测试数据集未在 {test_file} 找到")
-        
+        # Load test set
+        test_filename = f"{self.subject_name}_test.json"
+        # test_file = find_data_file(test_filename) # Use class method
+        test_file = self._find_data_file(test_filename)
+
+        if not test_file:
+            # Construct potential paths for error message clarity
+            task_dir_msg = getattr(self.eval_args, "task_dir", "./data")
+            benchmark_dir_msg = getattr(self.eval_args, 'benchmark_dir_internal', None)
+            is_benchmark_msg = getattr(self.eval_args, 'is_benchmark_mode', False)
+            if is_benchmark_msg and benchmark_dir_msg:
+                 expected_path_msg = os.path.join(benchmark_dir_msg, self.subject_name, test_filename)
+                 raise ValueError(f"[Benchmark Mode] Test dataset '{test_filename}' not found at expected path: {expected_path_msg}")
+            else:
+                 fallback_path_msg = os.path.join("./data", test_filename)
+                 raise ValueError(f"[Standard Mode] Test dataset '{test_filename}' not found in task_dir '{task_dir_msg}' or fallback '{fallback_path_msg}'.")
+
+        logger.info(f"Loading test examples from: {test_file}") # 英文日志
         with open(test_file, "r", encoding="utf-8") as f:
             self.test_examples = json.load(f)
             if isinstance(self.test_examples, dict):
                 self.test_examples = self.test_examples.get("examples", self.test_examples)
-        
+        # --- End of updated logic ---
+
         # 为测试样本添加索引（用于多adapter模式下的样本分配）
         for idx, example in enumerate(self.test_examples):
             example["index"] = idx
@@ -795,7 +865,7 @@ class CLEvalEvaluator(BaseEvaluator):
 
         # 计算准确率
         accuracy = correct / total if total > 0 else 0
-        print(f"\n准确率: {accuracy:.2%} ({correct}/{total})")
+        print(f"\nAccuracy: {accuracy:.2%} ({correct}/{total})")
 
         # 构造输出结果
         output = {
@@ -840,6 +910,6 @@ class CLEvalEvaluator(BaseEvaluator):
         with open(save_path, "w", encoding="utf-8") as f:
             json.dump(output, f, ensure_ascii=False, indent=2)
 
-        print(f"\n结果已保存到 {save_path}")
+        print(f"\nResults saved to {save_path}")
         
         return output

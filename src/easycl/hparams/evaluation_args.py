@@ -20,7 +20,7 @@ class EvaluationArguments:
     )
 
     task_dir: str = field(
-        default="evaluation",
+        default="data",
         metadata={"help": "数据集目录"}
     )
 

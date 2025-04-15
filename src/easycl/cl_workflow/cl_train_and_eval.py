@@ -35,6 +35,8 @@ from llamafactory.extras.logging import get_logger
 from llamafactory.hparams.parser import HfArgumentParser
 from easycl.cl_workflow.evaluator import CLEvaluator
 from easycl.cl_workflow.cl_eval.cl_metrics import CLMetricsCalculator
+# Import BenchmarkHandler
+from .benchmark_handler import BenchmarkHandler
 
 logger = get_logger(__name__)
 
@@ -79,6 +81,20 @@ class CLWorkflowArguments:
         default=False,
         metadata={"help": "是否在运行前清空输出和评估目录"}
     )
+    # --- Add Benchmark Arguments ---
+    benchmark: Optional[str] = field(
+        default=None,
+        metadata={"help": "Name of the benchmark to run."}
+    )
+    benchmark_order: Optional[str] = field(
+        default=None,
+        metadata={"help": "Specific task order defined within the benchmark's info file (e.g., 'order1')."}
+    )
+    benchmark_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to the directory containing the benchmark definition and data."}
+    )
+    # --- End Benchmark Arguments ---
 
 class CLCommandGenerator:
     """持续学习命令生成器"""
@@ -485,34 +501,61 @@ class CLWorkflow:
         self.train_args = train_args
         self.eval_args = eval_args
         self.current_task_id = None # Added to track current task within workflow
-        
-        # 加载参数文件
-        if self.workflow_args.mode == "eval_only":
-            # 在eval_only模式下，只需要加载评估参数
-            self.eval_kwargs = self._load_params(eval_args.eval_params)
-            if not self.eval_kwargs:
-                raise ValueError("在eval_only模式下必须提供有效的评估配置文件")
-            
-            # 初始化train_kwargs，只包含必要的参数
-            # Need base model path and potentially adapter path if evaluating LoRA
-            self.train_kwargs = {
-                "model_name_or_path": self.eval_kwargs.get("model_name_or_path"),
-                "dataset": self.eval_kwargs.get("cl_tasks", ""), # Use cl_tasks for consistency
-                "output_dir": os.path.dirname(self.eval_kwargs.get("save_dir", "eval_results")) # Base for potential paths
-            }
-            
-            # If adapter is being evaluated, add it to train_kwargs for reference
-            if "adapter_name_or_path" in self.eval_kwargs:
-                self.train_kwargs["adapter_name_or_path"] = self.eval_kwargs["adapter_name_or_path"]
-            if "cl_method" in self.eval_kwargs: # Pass CL method if relevant for eval
-                self.train_kwargs["cl_method"] = self.eval_kwargs["cl_method"]
-                 
+        self.is_benchmark_mode = False # Initialize benchmark mode flag
+
+        # Load parameters: Prioritize benchmark args if provided
+        if workflow_args.benchmark:
+            if not workflow_args.benchmark_order or not workflow_args.benchmark_dir:
+                raise ValueError("If 'benchmark' is specified, 'benchmark_order' and 'benchmark_dir' must also be provided.")
+            logger.info("Benchmark mode activated.")
+            self.is_benchmark_mode = True
+
+            # Initialize handler (this also validates benchmark info)
+            handler = BenchmarkHandler(
+                benchmark_name=workflow_args.benchmark,
+                benchmark_order=workflow_args.benchmark_order,
+                benchmark_dir=workflow_args.benchmark_dir
+            )
+
+            # Load base train/eval args (can be empty if not provided)
+            # _load_params should handle empty paths gracefully
+            base_train_kwargs = self._load_params(train_args.train_params) if train_args.train_params else {}
+            base_eval_kwargs = self._load_params(eval_args.eval_params) if eval_args.eval_params else {}
+
+            # Get benchmark-specific configs, overriding base configs
+            self.train_kwargs, self.eval_kwargs = handler.get_benchmark_configs(base_train_kwargs, base_eval_kwargs)
+            self.tasks = handler.get_task_sequence() # Get tasks from benchmark handler
+
         else:
-            # 其他模式下的正常加载
-            self.train_kwargs = self._load_params(train_args.train_params) if train_args.train_params else kwargs
-            self.eval_kwargs = self._load_params(eval_args.eval_params) if eval_args.eval_params else {}
-        
-        # 对adapter_name_or_path进行归一化处理，确保其为字符串格式
+            # Standard mode: Load parameters from files
+            logger.info("Standard workflow mode.")
+            if self.workflow_args.mode != "eval_only":
+                self.train_kwargs = self._load_params(train_args.train_params)
+                if not self.train_kwargs:
+                     raise ValueError("Training parameters file ('train_params') must be provided in non-eval_only mode.")
+            else:
+                self.train_kwargs = {} # No training in eval_only
+
+            if self.workflow_args.mode != "train_only":
+                self.eval_kwargs = self._load_params(eval_args.eval_params)
+                if not self.eval_kwargs:
+                     raise ValueError("Evaluation parameters file ('eval_params') must be provided in non-train_only mode.")
+            else:
+                self.eval_kwargs = {} # No evaluation in train_only
+
+            # Parse tasks from loaded configs in standard mode
+            if self.workflow_args.mode == "eval_only":
+                self.tasks = self.eval_kwargs.get("cl_tasks", "").split(",")
+                if not self.tasks or not self.tasks[0]:
+                    raise ValueError("Evaluation config must contain 'cl_tasks' in eval_only mode.")
+            elif self.train_kwargs:
+                self.tasks = self.train_kwargs.get("dataset", "").split(",")
+                if not self.tasks or not self.tasks[0]:
+                    raise ValueError("Training config must contain 'dataset' in non-eval_only mode.")
+            else:
+                self.tasks = [] # Should not happen if validation passed
+
+        # Normalize adapter paths after loading/overriding
         def _normalize_adapter_path(kwargs: Dict) -> None:
             if "adapter_name_or_path" in kwargs:
                 val = kwargs["adapter_name_or_path"]
@@ -520,11 +563,15 @@ class CLWorkflow:
                     kwargs["adapter_name_or_path"] = ",".join(str(x).strip() for x in val)
         _normalize_adapter_path(self.train_kwargs)
         _normalize_adapter_path(self.eval_kwargs)
-        
-        # Validate parameters (Now simpler, no default setting)
+
+        # Validate combined/final parameters (happens after potential benchmark overrides)
         self._validate_params()
 
-        # Automatically set calculate_cl_metrics based on workflow mode
+        # Set calculate_cl_metrics based on mode (after params are finalized)
+        # Ensure eval_kwargs exists before modification
+        if not self.eval_kwargs:
+            self.eval_kwargs = {} # Initialize if empty (e.g., train_only mode)
+
         if self.workflow_args.mode == "full_workflow":
             if self.eval_kwargs.get("calculate_cl_metrics") is False:
                  logger.info_rank0("Workflow mode is 'full_workflow', but 'calculate_cl_metrics' was explicitly set to False in config. Overriding to True.")
@@ -532,150 +579,129 @@ class CLWorkflow:
                  logger.info_rank0("Workflow mode is 'full_workflow'. Automatically enabling CL metrics calculation.")
             self.eval_kwargs["calculate_cl_metrics"] = True
         else:
+            # Only override to False if it was True, otherwise respect user's False or default (None)
             if self.eval_kwargs.get("calculate_cl_metrics") is True:
                  logger.info_rank0(f"Workflow mode is '{self.workflow_args.mode}', but 'calculate_cl_metrics' was explicitly set to True in config. Overriding to False as mode is not 'full_workflow'.")
-            else:
-                 logger.info_rank0(f"Workflow mode is '{self.workflow_args.mode}'. Setting 'calculate_cl_metrics' to False.")
-            self.eval_kwargs["calculate_cl_metrics"] = False
+                 self.eval_kwargs["calculate_cl_metrics"] = False
+            elif "calculate_cl_metrics" not in self.eval_kwargs:
+                 # Ensure it defaults to False if not specified and not full_workflow
+                 self.eval_kwargs["calculate_cl_metrics"] = False
+                 logger.info_rank0(f"Workflow mode is '{self.workflow_args.mode}'. Setting 'calculate_cl_metrics' to default False.")
         # End automatic setting
 
-        # 解析任务列表
-        if self.workflow_args.mode == "eval_only":
-            self.tasks = self.eval_kwargs.get("cl_tasks", "").split(",")
-            if not self.tasks or not self.tasks[0]:
-                raise ValueError("在评估配置中必须提供cl_tasks参数，多个任务用逗号分隔")
-        else:
-            self.tasks = self.train_kwargs.get("dataset", "").split(",")
-            if not self.tasks or not self.tasks[0]:
-                raise ValueError("必须在训练参数中提供dataset参数，多个任务用逗号分隔")
-            
-        # Ensure eval 'cl_tasks' matches train 'dataset' if eval config is provided separately
-        if self.workflow_args.mode != "eval_only" and self.eval_kwargs:
+        # Task list is now set either by benchmark handler or standard config loading
+        # Ensure eval 'cl_tasks' matches train 'dataset' IF NOT in benchmark mode
+        if not self.is_benchmark_mode and self.train_kwargs and self.eval_kwargs:
             train_datasets = self.train_kwargs.get("dataset")
             eval_tasks = self.eval_kwargs.get("cl_tasks")
             if eval_tasks and eval_tasks != train_datasets:
                 logger.warning(f"Eval config 'cl_tasks' ({eval_tasks}) differs from train 'dataset' ({train_datasets}). Using train 'dataset' for consistency.")
                 self.eval_kwargs["cl_tasks"] = train_datasets
-            elif not eval_tasks:
+            elif not eval_tasks and train_datasets:
                 self.eval_kwargs["cl_tasks"] = train_datasets # Set cl_tasks from train dataset
 
-                  
         # If cleaning dirs, do it after parameters are loaded and validated
         if self.workflow_args.clean_dirs and not self.workflow_args.previewonly:
             self._clean_directories()
-            
-        # Instantiate necessary components
+
+        # Instantiate command generator with the final parameters
         self.command_generator = CLCommandGenerator(self.train_kwargs, self.eval_kwargs)
-        
-        # Setup evaluator and metrics calculator only if not previewing
-        if not self.workflow_args.previewonly:
-            # Setup for Evaluator and Metrics Calculator (remains largely the same)
+
+        # Setup evaluator and metrics calculator only if not previewing and if evaluation is involved
+        if not self.workflow_args.previewonly and self.workflow_args.mode != "train_only":
             # Use train_kwargs as the primary source for model/data args unless in eval_only mode
             primary_args_source = self.eval_kwargs if self.workflow_args.mode == "eval_only" else self.train_kwargs
-            
+
+            # Check if essential keys exist before creating ModelArguments/DataArguments
+            model_path_key = "model_name_or_path"
+            dataset_dir_key = "dataset_dir"
+
+            if model_path_key not in primary_args_source:
+                # Try getting from eval_kwargs if eval_only, or raise error
+                if self.workflow_args.mode == "eval_only" and model_path_key in self.eval_kwargs:
+                    model_path = self.eval_kwargs[model_path_key]
+                else:
+                    raise ValueError(f"Missing required argument '{model_path_key}' in parameters for evaluation setup.")
+            else:
+                model_path = primary_args_source[model_path_key]
+
+            # dataset_dir is more complex due to benchmark mode
+            if self.is_benchmark_mode:
+                dataset_dir = self.train_kwargs.get(dataset_dir_key) # Benchmark handler sets this in train_kwargs
+            elif dataset_dir_key in primary_args_source:
+                dataset_dir = primary_args_source[dataset_dir_key]
+            else:
+                # Fallback or default? Assume DataArguments can handle None or default
+                dataset_dir = None
+                logger.warning(f"'{dataset_dir_key}' not found in primary parameters for evaluation setup. Using None.")
+
             model_args = ModelArguments(
-                model_name_or_path=primary_args_source.get("model_name_or_path")
+                model_name_or_path=model_path
             )
             data_args = DataArguments(
-                dataset_dir = primary_args_source.get("dataset_dir") # Make sure dataset_dir is available
+                dataset_dir=dataset_dir
             )
-            # Use HfArgumentParser to parse eval_kwargs into CLEvaluationArguments for robustness
-            # parser = HfArgumentParser((CLEvaluationArguments,))
-            # # Convert eval_kwargs dict to a list of strings for parsing
-            # eval_args_list = []
-            # for k, v in self.eval_kwargs.items():
-            #      if v is True:
-            #          eval_args_list.append(f"--{k}")
-            #      elif v is not False and v is not None:
-            #          eval_args_list.append(f"--{k}")
-            #          eval_args_list.append(str(v))
-            # 
-            # cl_eval_args, = parser.parse_args_into_dataclasses(args=eval_args_list, look_for_args_file=False)
-
-            # Extract the required 'task' argument first
-            # eval_task = self.eval_kwargs.get("task")
-            # if eval_task is None:
-            #     # Try to get task from cl_tasks if task is not directly provided
-            #     if self.tasks and len(self.tasks) == 1:
-            #          eval_task = self.tasks[0]
-            #          logger.info_rank0("Evaluation parameter 'task' not found in eval_config. Using the single task from 'cl_tasks': {}".format(eval_task))
-            #          # Add the task to eval_kwargs so it's available later if needed elsewhere
-            #          # self.eval_kwargs["task"] = eval_task # Avoid modifying original dict
-            #     elif self.tasks and len(self.tasks) > 1:
-            #          # If multiple tasks and no specific 'task' is given, it's ambiguous
-            #          # REMOVED: Raise error if task is missing for multi-task cl_tasks
-            #          # raise ValueError("Missing required argument 'task' in evaluation parameters (eval_config.json) when multiple tasks are defined in 'cl_tasks'. Please specify which task to use for CLEvaluationArguments.")
-            #          logger.info_rank0("Evaluation parameter 'task' not found in eval_config for multiple cl_tasks. Proceeding without a default task set at workflow init.")
-            #          eval_task = None # Task is not required at this stage
-            #     else:
-            #          # No tasks defined anywhere
-            #          raise ValueError("Missing required argument 'task' or 'cl_tasks' in evaluation parameters (eval_config.json).")
-
 
             # Instantiate CLEvaluationArguments: Determine the initial task value.
             initial_task = self.eval_kwargs.get("task")
             if initial_task is None:
                 if self.tasks:
                     initial_task = self.tasks[0]
-                    logger.info_rank0(f"Evaluation parameter 'task' not found in eval_config. Using the first task from 'cl_tasks' for initialization: {initial_task}")
+                    logger.info_rank0(f"Evaluation parameter 'task' not found. Using the first task '{initial_task}' for initialization.")
                 else:
-                    # This should ideally be caught by earlier validation, but added for safety.
-                    raise ValueError("Evaluation requires at least one task. Please specify 'task' or 'cl_tasks' in evaluation parameters.")
+                    raise ValueError("Evaluation requires at least one task. Please specify 'task' or 'cl_tasks' in parameters.")
 
-            # Instantiate with the determined initial task.
+            # Create CLEvaluationArguments instance
             cl_eval_args = CLEvaluationArguments(task=initial_task)
 
-            # Populate remaining fields from eval_kwargs, skipping 'task' as it's already set.
+            # Populate remaining fields from the final eval_kwargs
             for key, value in self.eval_kwargs.items():
-                if key == "task": # Skip the task field as it was used for initialization
-                    continue
+                if key == "task": continue # Skip task, already set
                 if hasattr(cl_eval_args, key):
                     setattr(cl_eval_args, key, value)
-                # else: # Optionally log unused keys from eval_config
-                #     logger.debug(f"Key '{key}' from eval_kwargs not found in CLEvaluationArguments.")
+                # else: logger.debug(f"Key '{key}' from final eval_kwargs not in CLEvaluationArguments.")
 
-            # Manually run post_init logic if needed (e.g., for calculate_cl_metrics)
-            # Ensure tasks are available before calling post_init if it depends on them
-            cl_eval_args.cl_tasks = ",".join(self.tasks) # Ensure cl_tasks is set before post_init
+            # Ensure cl_tasks is explicitly set in cl_eval_args from self.tasks
+            cl_eval_args.cl_tasks = ",".join(self.tasks)
+
+            # Manually run post_init logic if needed
             if hasattr(cl_eval_args, "__post_init__"):
                 try:
                     cl_eval_args.__post_init__()
                 except Exception as e:
                     logger.error(f"Error running __post_init__ for CLEvaluationArguments: {e}")
-                    # Decide if this is fatal or can be ignored
 
-             
-            finetuning_args = FinetuningArguments() # Add finetuning args if needed by evaluator
-            cl_finetuning_args = CLFinetuningArguments() # Initialize CLFinetuningArguments
+            finetuning_args = FinetuningArguments()
+            cl_finetuning_args = CLFinetuningArguments()
 
-            # Populate args from combined configs
-            # Be careful not to overwrite essential args like save_dir
-            combined_args = {**self.train_kwargs, **self.eval_kwargs}
+            # Populate args from combined configs (be careful with precedence)
+            combined_args = {**self.train_kwargs, **self.eval_kwargs} # Eval potentially overrides train
             for key, value in combined_args.items():
-                if hasattr(model_args, key) and getattr(model_args, key) is None: # Avoid overwriting model_name_or_path if already set
+                if hasattr(model_args, key) and getattr(model_args, key) is None:
                     setattr(model_args, key, value)
                 if hasattr(data_args, key) and getattr(data_args, key) is None:
                     setattr(data_args, key, value)
-                # cl_eval_args already populated manually
-                if hasattr(finetuning_args, key) and getattr(finetuning_args, key) is None:
-                    setattr(finetuning_args, key, value)
-                if hasattr(cl_finetuning_args, key) and getattr(cl_finetuning_args, key) is None: # Populate cl_finetuning_args
-                    setattr(cl_finetuning_args, key, value)
-                    
-            # Ensure essential eval args are set correctly (e.g., save_dir might be overwritten by loop above)
-            # cl_eval_args.save_dir = self.eval_args.save_dir # Already done by loop if save_dir is in eval_kwargs
-            # cl_eval_args.cl_tasks = ",".join(self.tasks) # Ensure tasks are correctly set for evaluator - moved before post_init
-            
+                # cl_eval_args populated manually
+                if hasattr(finetuning_args, key):
+                    # Avoid overwriting defaults with None unless explicitly provided
+                    if getattr(finetuning_args, key) is None or value is not None:
+                         setattr(finetuning_args, key, value)
+                if hasattr(cl_finetuning_args, key):
+                     if getattr(cl_finetuning_args, key) is None or value is not None:
+                         setattr(cl_finetuning_args, key, value)
+
             try:
-                self.evaluator = CLEvaluator((model_args, data_args, cl_eval_args, finetuning_args, cl_finetuning_args)) # Pass 5 args
+                self.evaluator = CLEvaluator((model_args, data_args, cl_eval_args, finetuning_args, cl_finetuning_args))
                 self.metrics_calculator = CLMetricsCalculator(self.tasks)
             except Exception as e:
                 logger.error(f"Failed to initialize CLEvaluator or CLMetricsCalculator: {e}")
                 logger.error("Evaluation and metrics calculation will be skipped.")
                 self.evaluator = None
                 self.metrics_calculator = None
-            
-        
+        else:
+            self.evaluator = None
+            self.metrics_calculator = None
+
     def _validate_params(self):
         """验证参数的有效性 (Simplified: Removed default setting logic)"""
         logger.info_rank0("Validating parameters...")

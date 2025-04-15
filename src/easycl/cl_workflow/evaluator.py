@@ -97,22 +97,42 @@ class CLEvaluator:
         try:
             # 导入ABSCL选择器模块
             from easycl.cl.abscl.abscl_selector import select_adapter
-            logger.info(f"使用ABSCL选择器为任务: {task} 选择最合适的Adapters")
-            
+            logger.info(f"Using ABSCL selector for task: {task} to select the most suitable Adapters")
+
             # 创建副本避免修改原始参数
             model_args_copy = copy.deepcopy(self.model_args)
             data_args_copy = copy.deepcopy(self.data_args)
             eval_args_copy = copy.deepcopy(self.cl_eval_args)
             finetuning_args_copy = copy.deepcopy(self.finetuning_args)
-            
+
             # 设置任务名
             eval_args_copy.task = task
-            
+
+            # Updated dataset_path logic
+            task_name = task.split("_")[0]
+            test_filename = f"{task_name}_test.json"
+            task_dir = getattr(self.cl_eval_args, "task_dir", "./data")
+
+            # Try loading from task_dir first
+            potential_path = os.path.join(task_dir, test_filename)
+            if os.path.exists(potential_path):
+                dataset_path = potential_path
+                logger.info(f"Found test dataset for selector in task_dir: {dataset_path}")
+            else:
+                # Fallback to ./data
+                potential_path = os.path.join("./data", test_filename)
+                if os.path.exists(potential_path):
+                    dataset_path = potential_path
+                    logger.info(f"Found test dataset for selector in fallback ./data: {dataset_path}")
+                else:
+                    logger.error(f"Test dataset '{test_filename}' not found in task_dir '{task_dir}' or fallback './data'. Cannot run selector.")
+                    return False
+
             # 运行选择器
             select_adapter(
                 model_args=model_args_copy,
                 data_args=data_args_copy,
-                training_args=eval_args_copy,  # 注意：在select_adapter中training_args实际上是eval_args
+                training_args=eval_args_copy,
                 finetuning_args=finetuning_args_copy,
                 dataset_path=dataset_path,
                 multi_adapter_dir=self.cl_eval_args.multi_adapter_dir,
@@ -150,22 +170,42 @@ class CLEvaluator:
         try:
             # 导入Dynamic ConPet选择器模块
             from easycl.cl.dynamic_conpet.dynamic_conpet_selector import select_adapter_dynamic_conpet
-            logger.info(f"使用Dynamic ConPet选择器为任务: {task} 选择最合适的Adapters")
-            
+            logger.info(f"Using Dynamic ConPet selector for task: {task} to select the most suitable Adapters")
+
             # 创建副本避免修改原始参数
             model_args_copy = copy.deepcopy(self.model_args)
             data_args_copy = copy.deepcopy(self.data_args)
             eval_args_copy = copy.deepcopy(self.cl_eval_args)
             finetuning_args_copy = copy.deepcopy(self.finetuning_args)
-            
+
             # 设置任务名
             eval_args_copy.task = task
-            
+
+            # Updated dataset_path logic
+            task_name = task.split("_")[0]
+            test_filename = f"{task_name}_test.json"
+            task_dir = getattr(self.cl_eval_args, "task_dir", "./data")
+
+            # Try loading from task_dir first
+            potential_path = os.path.join(task_dir, test_filename)
+            if os.path.exists(potential_path):
+                dataset_path = potential_path
+                logger.info(f"Found test dataset for selector in task_dir: {dataset_path}")
+            else:
+                # Fallback to ./data
+                potential_path = os.path.join("./data", test_filename)
+                if os.path.exists(potential_path):
+                    dataset_path = potential_path
+                    logger.info(f"Found test dataset for selector in fallback ./data: {dataset_path}")
+                else:
+                    logger.error(f"Test dataset '{test_filename}' not found in task_dir '{task_dir}' or fallback './data'. Cannot run selector.")
+                    return False
+
             # 运行选择器
             select_adapter_dynamic_conpet(
                 model_args=model_args_copy,
                 data_args=data_args_copy,
-                training_args=eval_args_copy,  # 在选择器中training_args实际上是eval_args
+                training_args=eval_args_copy,
                 finetuning_args=finetuning_args_copy,
                 dataset_path=dataset_path,
                 multi_adapter_dir=self.cl_eval_args.multi_adapter_dir,
@@ -208,6 +248,9 @@ class CLEvaluator:
 
             # 更新任务特定参数
             eval_args["task"] = task
+            if task not in self.dataset_options:
+                 logger.error(f"Task '{task}' not found in loaded dataset options. Skipping evaluation for this task.")
+                 continue
             task_config = self.dataset_options[task]
 
             # 为每个任务创建独立的保存目录
@@ -215,23 +258,23 @@ class CLEvaluator:
             os.makedirs(task_save_dir, exist_ok=True)
             eval_args["save_dir"] = task_save_dir
 
-            logger.info(f"正在评估任务: {task}")
-            logger.info(f"任务结果将保存在: {task_save_dir}")
+            logger.info(f"Evaluating task: {task}")
+            logger.info(f"Task results will be saved in: {task_save_dir}")
             
             # 确保multi_adapter_dir正确传递
             if self.using_multi_adapter:
-                logger.info(f"使用多Adapter模式评估任务: {task}")
+                logger.info(f"Using Multi-Adapter mode for evaluating task: {task}")
                 # 确保multi_adapter_dir参数被传递
                 if "multi_adapter_dir" not in eval_args and hasattr(self.cl_eval_args, "multi_adapter_dir"):
                     eval_args["multi_adapter_dir"] = self.cl_eval_args.multi_adapter_dir
                     
                 multi_adapter_dir = eval_args.get("multi_adapter_dir", self.cl_eval_args.multi_adapter_dir)
-                logger.info(f"多Adapter配置目录: {multi_adapter_dir}")
+                logger.info(f"Multi-Adapter config directory: {multi_adapter_dir}")
                 
             # 修复：确保adapter_name_or_path是字符串格式
             if "adapter_name_or_path" in eval_args and isinstance(eval_args["adapter_name_or_path"], list):
                 eval_args["adapter_name_or_path"] = ",".join(eval_args["adapter_name_or_path"])
-                logger.info(f"已将adapter_name_or_path从列表转换为逗号分隔的字符串: {eval_args['adapter_name_or_path']}")
+                logger.info(f"Converted adapter_name_or_path from list to comma-separated string: {eval_args['adapter_name_or_path']}")
 
             # 将数据集选项配置保存为临时文件
             task_options = {
@@ -247,69 +290,63 @@ class CLEvaluator:
             # 设置评估参数：使用临时文件路径
             eval_args["dataset_options"] = task_options_path
             
-            # 获取测试集路径，用于可能的选择器
-            task_name = task.split("_")[0]
-            dataset_path = os.path.join("./data", f"{task_name}_test.json")
-            
             # 多adapter模式下，运行选择器
             if self.using_multi_adapter:
-                if not os.path.exists(dataset_path):
-                    logger.warning(f"未找到任务 {task} 的测试集文件: {dataset_path}，无法运行选择器")
-                else:
-                    selector_run_attempted = False
-                    selector_success = False # Default to failure unless a selector runs successfully
+                selector_run_attempted = False
+                selector_success = False
 
-                    # 检查 Dynamic ConPet (如果启用)
-                    if self.cl_eval_args.use_dynamic_conpet_selector:
-                        selector_run_attempted = True
-                        logger.info(f"为任务 {task} 运行Dynamic ConPet选择器...")
-                        selector_success = self._run_dynamic_conpet_selector(task, dataset_path)
-                        if not selector_success:
-                            # 如果 Dynamic ConPet 失败，立即报错停止
-                            raise ValueError(f"任务 {task} 的 Dynamic ConPet 选择器运行失败。评估已中止。")
-                        else:
-                            logger.info(f"Dynamic ConPet选择器成功运行，任务 {task} 将使用选择的Adapters进行评估")
+                # 检查 Dynamic ConPet (如果启用)
+                if self.cl_eval_args.use_dynamic_conpet_selector:
+                    selector_run_attempted = True
+                    logger.info(f"Running Dynamic ConPet selector for task {task}...")
+                    selector_success = self._run_dynamic_conpet_selector(task, dataset_path=None)
+                    if not selector_success:
+                        # 如果 Dynamic ConPet 失败，立即报错停止
+                        raise ValueError(f"Dynamic ConPet selector failed for task {task}. Evaluation aborted.")
+                    else:
+                        logger.info(f"Dynamic ConPet selector ran successfully. Task {task} will be evaluated using selected Adapters.")
 
-                    # 仅当 Dynamic ConPet 未启用 且 ABSCL 启用时，才检查 ABSCL
-                    elif self.cl_eval_args.use_abscl_selector:
-                        selector_run_attempted = True
-                        logger.info(f"为任务 {task} 运行ABSCL选择器...")
-                        selector_success = self._run_abscl_selector(task, dataset_path)
-                        if not selector_success:
-                            # 如果 ABSCL 失败，立即报错停止
-                            raise ValueError(f"任务 {task} 的 ABSCL 选择器运行失败。评估已中止。")
-                        else:
-                            logger.info(f"ABSCL选择器成功运行，任务 {task} 将使用选择的Adapters进行评估")
+                # 仅当 Dynamic ConPet 未启用 且 ABSCL 启用时，才检查 ABSCL
+                elif self.cl_eval_args.use_abscl_selector:
+                    selector_run_attempted = True
+                    logger.info(f"Running ABSCL selector for task {task}...")
+                    selector_success = self._run_abscl_selector(task, dataset_path=None)
+                    if not selector_success:
+                        # 如果 ABSCL 失败，立即报错停止
+                        raise ValueError(f"ABSCL selector failed for task {task}. Evaluation aborted.")
+                    else:
+                        logger.info(f"ABSCL selector ran successfully. Task {task} will be evaluated using selected Adapters.")
 
-                    # 如果启用了多Adapter模式，但没有启用任何选择器
-                    if not selector_run_attempted:
-                         logger.warning(f"多Adapter模式已启用，但没有为任务 {task} 配置或启用任何选择器。将继续执行，但这可能不是预期行为。")
+                # 如果启用了多Adapter模式，但没有启用任何选择器
+                if not selector_run_attempted:
+                     logger.warning(f"Multi-Adapter mode is enabled, but no selector configured or enabled for task {task}. Proceeding, but this might not be intended behavior.")
 
-                    # 确保multi_adapter_dir被包含在评估参数中
-                    eval_args["multi_adapter_dir"] = self.cl_eval_args.multi_adapter_dir
+                # 确保multi_adapter_dir被包含在评估参数中
+                eval_args["multi_adapter_dir"] = self.cl_eval_args.multi_adapter_dir
 
             # 判断是否是自定义数据集还是标准数据集
+            task_name = task.split("_")[0]
             if task_name in ["mmlu", "cmmlu", "ceval"]:
                 # 标准数据集使用原始评估器
-                logger.info(f"使用标准评估器评估任务: {task}")
+                logger.info(f"Using standard evaluator for task: {task}")
                 evaluator = Evaluator(eval_args)
                 evaluator.eval()
             else:
                 # 自定义数据集使用持续学习评估器
-                logger.info(f"使用持续学习评估器评估任务: {task}")
+                logger.info(f"Using continual learning evaluator for task: {task}")
                 evaluator = CLEvalEvaluator(eval_args)
                 
                 # 确保在多adapter模式下设置正确的属性
                 if self.using_multi_adapter:
-                    logger.info(f"任务 {task} 启用多adapter模式评估")
+                    logger.info(f"Task {task} evaluation enabled in multi-adapter mode")
                     if not hasattr(evaluator, "using_multi_adapter") or not evaluator.using_multi_adapter:
-                        logger.warning("CLEvalEvaluator的多adapter模式未正确启用，尝试手动启用")
+                        logger.warning("CLEvalEvaluator multi-adapter mode not properly enabled, attempting manual activation")
                         evaluator.using_multi_adapter = True
                         
                     # 确保multi_adapter_dir被正确传递
                     if not hasattr(evaluator.eval_args, "multi_adapter_dir") and "multi_adapter_dir" in eval_args:
                         evaluator.eval_args.multi_adapter_dir = eval_args["multi_adapter_dir"]
-                        logger.info(f"手动设置evaluator的multi_adapter_dir: {evaluator.eval_args.multi_adapter_dir}")
+                        logger.info(f"Manually set evaluator's multi_adapter_dir: {evaluator.eval_args.multi_adapter_dir}")
                 
                 # 运行评估
                 evaluator.evaluate_custom_dataset()
@@ -323,7 +360,7 @@ class CLEvaluator:
             os.remove(task_options_path)
 
             # 显式删除 evaluator 并释放内存
-            logger.info(f"任务 {task} 评估完成，释放资源")
+            logger.info(f"Task {task} evaluation complete, releasing resources")
             del evaluator
             gc.collect()
             torch.cuda.empty_cache()

@@ -117,12 +117,10 @@ class CustomDatasetAdapter:
                 if opt == norm_expected:
                     return True, "option", "Option match"
                     
-        # 3. 关键词匹配
-        expected_words = set(norm_expected.split())
-        predicted_words = set(norm_predicted.split())
-        common_words = expected_words & predicted_words
-        if len(common_words) / len(expected_words) >= 0.5:  # 至少50%的关键词匹配
-            return True, "partial", "Keyword match"
+        # 3. 子字符串匹配 (替换原来的关键词匹配)
+        # 检查规范化后的预期答案是否是规范化后的预测答案的子集
+        if norm_expected in norm_predicted:
+             return True, "substring", "Substring match (expected in predicted)"
             
         # 4. 模糊匹配
         for opt in norm_options:

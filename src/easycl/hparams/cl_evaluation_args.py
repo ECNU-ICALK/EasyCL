@@ -108,6 +108,16 @@ class CLEvaluationArguments(EvaluationArguments):
         metadata={"help": "vLLM流水线并行大小，仅在cleval_use_vllm=True时有效"}
     )
     
+    # Added for benchmark mode internal handling
+    is_benchmark_mode: bool = field(
+        default=False,
+        metadata={"help": "Internal flag indicating benchmark mode."}
+    )
+    benchmark_dir_internal: Optional[str] = field(
+        default=None,
+        metadata={"help": "Internal path to benchmark root for data loading."}
+    )
+
     def __post_init__(self):
         # super().__post_init__() # Commented out to fix AttributeError
 
@@ -129,23 +139,6 @@ class CLEvaluationArguments(EvaluationArguments):
                 raise ValueError("在multi_adapter模式下必须提供multi_adapter_dir")
 
 
-        
-        # 检查所有任务是否都有对应的配置
-        if self.dataset_options:
-            try:
-                with open(self.dataset_options, "r") as f:
-                    dataset_options = json.load(f)
-                for task in tasks:
-                    if task not in dataset_options:
-                        # 允许缺少配置，但发出警告
-                        logger.warning(f"任务 {task} 在 dataset_options 文件 '{self.dataset_options}' 中没有找到对应的配置。")
-            except FileNotFoundError:
-                logger.error(f"Dataset options file not found: {self.dataset_options}")
-            except json.JSONDecodeError:
-                logger.error(f"Error decoding JSON from dataset options file: {self.dataset_options}")
-            except Exception as e:
-                logger.error(f"Error reading dataset options file {self.dataset_options}: {e}")
-        
         # 检查选择器逻辑
         if self.use_abscl_selector and self.use_dynamic_conpet_selector:
             logger.warning("同时启用了ABSCL选择器和Dynamic ConPet选择器，将优先使用Dynamic ConPet选择器")
