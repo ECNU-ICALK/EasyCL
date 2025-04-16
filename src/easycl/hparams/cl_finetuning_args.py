@@ -230,6 +230,11 @@ class clMoEArguments(CommonCLFinetuningArguments):
         default=False,
         metadata={"help": "Whether to use cl-MoE for finetuning."}
     )
+    
+    top_k_experts: int = field(
+        default=8,
+        metadata={"help": "The number of top experts to select during statistics calculation."}
+    )
 
 @dataclass
 class DynamicConPETArguments(CommonCLFinetuningArguments):
@@ -271,55 +276,6 @@ class SSRArguments(CommonCLFinetuningArguments):
     pseudo_samples_dir: str = field(
         default="pseudo_samples",
         metadata={"help": "Directory for storing pseudo samples."}
-    )
-
-@dataclass
-class ILORAArguments:
-    """Arguments pertaining to I-LORA method."""
-    
-    use_ilora: bool = field(
-        default=False,
-        metadata={"help": "Whether to use I-LORA method."}
-    )
-    
-    ema_alpha: float = field(
-        default=0.25,
-        metadata={"help": "EMA smoothing coefficient for I-LORA."}
-    )
-    
-    consistency_weight: float = field(
-        default=1.0,
-        metadata={"help": "Weight coefficient for consistency loss in I-LORA."}
-    )
-    
-    save_ema_adapter: bool = field(
-        default=True,
-        metadata={"help": "Whether to save EMA adapter in I-LORA."}
-    )
-    
-    ema_adapter_path: str = field(
-        default=None,
-        metadata={"help": "Path to the EMA adapter, defaults to None for automatic path construction based on task ID."}
-    )
-
-    selective_update: bool = field(
-        default=True,
-        metadata={"help": "Whether to use selective update strategy in I-LORA."}
-    )
-
-    min_update_threshold: float = field(
-        default=0.1,
-        metadata={"help": "Minimum threshold for selective update in I-LORA."}
-    )
-
-    hidden_state_layers: List[int] = field(
-        default_factory=lambda: [-1, -2, -3],
-        metadata={"help": "Layers to compute hidden state consistency loss, -1 means last layer."}
-    )
-
-    ilora_buffer_size: int = field(
-        default=500,
-        metadata={"help": "Size of the experience replay buffer specifically for I-LORA method."}
     )
 
 @dataclass

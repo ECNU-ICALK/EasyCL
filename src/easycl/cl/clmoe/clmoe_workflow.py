@@ -1,17 +1,3 @@
-# Copyright 2025 the LlamaFactory team.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import os
 import shutil
 import torch
@@ -42,7 +28,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-def run_statistics_calculation(output_dir: str, task_id: str):
+def run_statistics_calculation(output_dir: str, task_id: str, top_k_experts: int):
     logger.info_rank0(f"Running statistics calculation for task: {task_id}")
     value_counts_file = os.path.join(output_dir, f"value_counts_{task_id}.txt")
     index_output_file = os.path.join(output_dir, f"index_{task_id}.txt")
@@ -68,12 +54,12 @@ def run_statistics_calculation(output_dir: str, task_id: str):
         # Sort the dictionary by values in descending order
         sorted_result = dict(sorted(index_sum_dict.items(), key=lambda item: item[1], reverse=True))
 
-        # Collect the top 8 indices, excluding -1
+        # Collect the top k indices, excluding -1
         top_keys = []
         for key in sorted_result:
             if key != -1:
                 top_keys.append(key)
-            if len(top_keys) == 8:
+            if len(top_keys) == top_k_experts:
                 break
 
         # Write the top indices to the output file
@@ -81,7 +67,7 @@ def run_statistics_calculation(output_dir: str, task_id: str):
             for key in top_keys:
                 output_file.write(f"{key}\n")
 
-        logger.info_rank0(f"Successfully calculated statistics and saved top 8 indices to {index_output_file}")
+        logger.info_rank0(f"Successfully calculated statistics and saved top {top_k_experts} indices to {index_output_file}")
         logger.info_rank0(f"Statistics result: {sorted_result}")
         return True
     except Exception as e:
@@ -399,7 +385,7 @@ def run_sft_clmoe( # Renamed from run_sft_moelora
              # --- Added: Run statistics calculation also for the first task --- 
              logger.info_rank0("Running statistics calculation for the first task...")
              try:
-                 run_statistics_calculation(training_args.output_dir, cl_finetuning_args.current_task_id)
+                 run_statistics_calculation(training_args.output_dir, cl_finetuning_args.current_task_id, cl_finetuning_args.top_k_experts)
                  logger.info_rank0("Statistics calculation for the first task completed successfully.")
              except (FileNotFoundError, RuntimeError) as stats_err:
                  # logger.error_rank0(f"Statistics calculation failed for the first task: {stats_err}")
@@ -424,7 +410,7 @@ def run_sft_clmoe( # Renamed from run_sft_moelora
                 raise ValueError(f"Failed to save unaligned model to {not_aligned_dir}: {e}")
 
             # 2. Run statistics calculation for the current task
-            run_statistics_calculation(training_args.output_dir, cl_finetuning_args.current_task_id)
+            run_statistics_calculation(training_args.output_dir, cl_finetuning_args.current_task_id, cl_finetuning_args.top_k_experts)
 
             # 3. Run parameter alignment (which handles final saving)
             run_parameter_alignment(
