@@ -190,7 +190,7 @@ We currently support the following three commonly used benchmarks:
 
 1. **LFPT5** - [Lfpt5: A unified framework for lifelong few-shot language learning based on prompt tuning of t5](https://arxiv.org/pdf/2110.07298)
 2. **Large Number of Tasks Benchmark** - [Orthogonal subspace learning for language model continual learning](https://arxiv.org/pdf/2310.14152)
-3. **ABSACL (Aspect-based Sentiment Analysis Continual Learning)** - [Adapting bert for continual learning of a sequence of aspect sentiment classification tasks](https://arxiv.org/pdf/2112.03271)
+3. **ABSACL_ATSC (Aspect-based Sentiment Analysis Continual Learning)** - [Adapting bert for continual learning of a sequence of aspect sentiment classification tasks](https://arxiv.org/pdf/2112.03271)
 
 You can use the following command to run benchmark evaluations (Benchmark evaluation currently only supports running in `full_workflow` mode):
 
@@ -198,7 +198,7 @@ You can use the following command to run benchmark evaluations (Benchmark evalua
 easycl-cli cl_workflow --mode full_workflow \\
     --train_params ./example/train_examples/lora_example.yaml \\
     --eval_params ./example/eval_examples/lora_eval.yaml \\
-    --benchmark ABSACL --benchmark_order order1 --benchmark_dir ./benchmark/ABSACL
+    --benchmark ABSACL_ATSC --benchmark_order order1 --benchmark_dir ./benchmark/ABSACL_ATSC
 ```
 
 **Note:**
@@ -221,7 +221,7 @@ If you wish to use your own benchmark, please follow these steps:
    * Register dataset options in the `dataset_options.json` file at the project root. Refer to the examples in the [Continuous Learning Evaluation](#continuous-learning-evaluation) section.
 4. **Create `benchmark_info.json`:**
    * In your created benchmark directory (e.g., `benchmark/my_custom_benchmark`), create a `benchmark_info.json` file.
-   * In this file, define your benchmark name, different task orders, and specify the dataset names corresponding to each task within each order (these names should match those registered in `dataset_info.json`). You can refer to the structure of existing benchmarks (e.g., `benchmark/ABSACL/benchmark_info.json`).
+   * In this file, define your benchmark name, different task orders, and specify the dataset names corresponding to each task within each order (these names should match those registered in `dataset_info.json`). You can refer to the structure of existing benchmarks (e.g., `benchmark/ABSACL_ATSC/benchmark_info.json`).
 5. **Run Benchmark:**
    * You can now run your custom benchmark using the `easycl-cli` command with the `--benchmark <YourBenchmarkName>` and `--benchmark_dir ./benchmark/<YourBenchmarkDirectory>` arguments.
 

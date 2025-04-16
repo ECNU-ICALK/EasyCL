@@ -1,6 +1,6 @@
 {
-    "ABSACL": {
-        "description": "ABSACL benchmark for Aspect-Based Sentiment Analysis Classification",
+    "ABSACL_ATSC": {
+        "description": "ABSACL_ATSC benchmark for Aspect-Based Sentiment Analysis Classification",
         "orders": {
             "order1": [
                 "ApexAD2600Progressive",

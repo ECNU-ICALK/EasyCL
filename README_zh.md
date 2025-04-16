@@ -190,7 +190,7 @@ pip install -e . --no-deps
 
 1.  **LFPT5** - [Lfpt5: A unified framework for lifelong few-shot language learning based on prompt tuning of t5](https://arxiv.org/pdf/2110.07298)
 2.  **Large Number of Tasks Benchmark** - [Orthogonal subspace learning for language model continual learning](https://arxiv.org/pdf/2310.14152)
-3.  **ABSACL (Aspect-based Sentiment Analysis Continual Learning)** - [Adapting bert for continual learning of a sequence of aspect sentiment classification tasks](https://arxiv.org/pdf/2112.03271)
+3.  **ABSACL_ATSC (Aspect-based Sentiment Analysis Continual Learning)** - [Adapting bert for continual learning of a sequence of aspect sentiment classification tasks](https://arxiv.org/pdf/2112.03271)
 
 你可以使用如下命令来进行 Benchmark 评估（Benchmark 评估目前只支持在 `full_workflow` 模式下运行）：
 
@@ -198,7 +198,7 @@ pip install -e . --no-deps
 easycl-cli cl_workflow --mode full_workflow \\
     --train_params ./example/train_examples/lora_example.yaml \\
     --eval_params ./example/eval_examples/lora_eval.yaml \\
-    --benchmark ABSACL --benchmark_order order1 --benchmark_dir ./benchmark/ABSACL
+    --benchmark ABSACL_ATSC --benchmark_order order1 --benchmark_dir ./benchmark/ABSACL_ATSC
 ```
 
 **注意:**
@@ -221,7 +221,7 @@ easycl-cli cl_workflow --mode full_workflow \\
     *   请在项目根目录的 `dataset_options.json` 文件中注册数据集选项。参考 [持续学习评估](#持续学习评估) 部分的示例。
 4.  **创建 `benchmark_info.json`:**
     *   在你创建的 Benchmark 目录下（例如 `benchmark/my_custom_benchmark`），创建一个 `benchmark_info.json` 文件。
-    *   在此文件中，定义你的 Benchmark 名称、不同的任务顺序 (order)，并指定每个顺序下各个任务所对应的数据集名称（这些名称应与 `dataset_info.json` 中注册的名称一致）。可以参考现有 Benchmark（如 `benchmark/ABSACL/benchmark_info.json`）的结构。
+    *   在此文件中，定义你的 Benchmark 名称、不同的任务顺序 (order)，并指定每个顺序下各个任务所对应的数据集名称（这些名称应与 `dataset_info.json` 中注册的名称一致）。可以参考现有 Benchmark（如 `benchmark/ABSACL_ATSC/benchmark_info.json`）的结构。
 5.  **运行 Benchmark:**
     *   现在你可以使用 `easycl-cli` 命令，并通过 `--benchmark <你的Benchmark名称>` 和 `--benchmark_dir ./benchmark/<你的Benchmark目录>` 参数来运行你的自定义 Benchmark 了。
 
