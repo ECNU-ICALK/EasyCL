@@ -6,6 +6,28 @@
 [ [English](README.md) | [中文](README_zh.md) ]
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
+## ✨ 状态概览
+
+<details>
+<summary>🚧 <strong>已知问题 / 即将推出的功能</strong></summary>
+
+*   [问题] 伪回放 (Pseudo Replay) 方法读取的是 tokenized 数据而非原始数据。
+*   [问题] 评估未能正确依赖 `dataset_info.json`。
+*   [问题] 梯度情景记忆 (GEM) 方法存在显存溢出问题。
+*   [问题] 评估时使用了过于严格的生成参数（例如 MMLU 的参数）。
+*   [待办] 对 MoE-LoRA 相关方法与原实现进行结果比较。
+*   [功能] 计划添加对 [新方法/功能] 的支持。
+*   优化 [特定过程] 中的内存使用。
+
+</details>
+
+<details>
+<summary>✅ <strong>已解决问题 / 已完成功能</strong></summary>
+
+*   （此部分将在问题解决和功能完成后更新。格式：`[类型 #ID] 描述 (YYYY-MM-DD)`）
+
+</details>
+
 ## 目录
 
 - [简介](#简介)

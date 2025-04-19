@@ -6,6 +6,28 @@
 [ [English](README.md) | [中文](README_zh.md) ]
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
+## ✨ Status Overview
+
+<details>
+<summary>🚧 <strong>Known Issues / Upcoming Features</strong></summary>
+
+*   [Issue] Pseudo-replay method reads tokenized data instead of raw data.
+*   [Issue] Evaluation does not correctly depend on `dataset_info.json`.
+*   [Issue] Gradient Episodic Memory (GEM) causes out-of-memory errors.
+*   [Issue] Evaluation uses overly strict generation parameters (e.g., MMLU parameters).
+*   [TODO] Compare results of MoE-LoRA related methods with original implementations.
+*   [Feature] Planning to add support for [New Method/Feature].
+*   Optimizing memory usage during [Specific Process].
+
+</details>
+
+<details>
+<summary>✅ <strong>Resolved Issues / Completed Features</strong></summary>
+
+*   (This section will be updated as issues are resolved and features are completed. Format: `[Type #ID] Description (YYYY-MM-DD)`)
+
+</details>
+
 ## Table of Contents
 
 - [Introduction](#introduction)
@@ -269,4 +291,4 @@ For detailed information about workflow configuration and CL metrics, see [src/e
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details. 
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
