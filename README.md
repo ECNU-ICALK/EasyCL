@@ -6,7 +6,7 @@
 [ [English](README.md) | [中文](README_zh.md) ]
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-## ✨ Status Overview
+##  Status Overview
 
 <details>
 <summary>🚧 <strong>Known Issues / Upcoming Features</strong></summary>
