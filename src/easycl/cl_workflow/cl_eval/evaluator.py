@@ -44,7 +44,8 @@ class CLEvalEvaluator(BaseEvaluator):
         self.generating_args = parser.parse_dict(args, allow_extra_keys=True)[0]
         
         self.tokenizer = load_tokenizer(self.model_args)["tokenizer"]
-        self.tokenizer.padding_side = "right"  # avoid overflow issue in batched inference
+        # Set default padding side to left for generation consistency
+        self.tokenizer.padding_side = "left" 
         self.template = get_template_and_fix_tokenizer(self.tokenizer, self.data_args)
         
         # Record the initial adapter path intended for single-adapter mode
@@ -161,6 +162,36 @@ class CLEvalEvaluator(BaseEvaluator):
         
         # 初始化当前加载的adapter路径
         self.current_adapter_path = None
+
+        # 预加载 dataset_info.json (如果存在)
+        self.dataset_info = None
+        task_dir = getattr(self.eval_args, "task_dir", "./data")
+        dataset_info_path = os.path.join(task_dir, "dataset_info.json")
+        fallback_info_path = os.path.join("./data", "dataset_info.json")
+
+        # 优先检查 task_dir
+        if os.path.exists(dataset_info_path):
+            path_to_load = dataset_info_path
+        # 如果 task_dir 不是 ./data 且 task_dir 中没找到，检查 ./data
+        elif os.path.abspath(task_dir) != os.path.abspath("./data") and os.path.exists(fallback_info_path):
+            path_to_load = fallback_info_path
+            logger.warning(f"dataset_info.json not found in task_dir '{task_dir}', using fallback: {path_to_load}") # English log
+        else:
+            path_to_load = None
+            # 在 evaluate_custom_dataset 中会处理找不到的情况，这里只记录日志
+            if not os.path.exists(dataset_info_path):
+                logger.warning(f"dataset_info.json not found in task directory: {dataset_info_path}") # English log
+            if os.path.abspath(task_dir) != os.path.abspath("./data") and not os.path.exists(fallback_info_path):
+                logger.warning(f"dataset_info.json also not found in fallback directory: {fallback_info_path}") # English log
+
+        if path_to_load:
+            try:
+                with open(path_to_load, "r", encoding="utf-8") as f:
+                    self.dataset_info = json.load(f)
+                logger.info(f"Successfully preloaded dataset_info.json from {path_to_load}") # English log
+            except Exception as e:
+                logger.error(f"Failed to load or parse dataset_info.json from {path_to_load}: {e}") # English log
+                # Keep self.dataset_info as None, error will be handled later if needed
     
     def _init_vllm_engine(self) -> None:
         """初始化vLLM推理引擎"""
@@ -346,44 +377,124 @@ class CLEvalEvaluator(BaseEvaluator):
         # 默认使用CustomDatasetAdapter
         return CustomDatasetAdapter()
 
-    def _find_data_file(self, filename: str) -> Optional[str]:
-        """Finds the data file, handling benchmark mode structure."""
-        # Check if in benchmark mode
-        is_benchmark = getattr(self.eval_args, 'is_benchmark_mode', False)
-        benchmark_root = getattr(self.eval_args, 'benchmark_dir_internal', None)
+    def _find_data_file(self, task_name: str, split_type: str) -> Optional[str]:
+        """
+        Finds the data file path for a given task and split type using dataset_info.json.
 
-        if is_benchmark and benchmark_root:
-            # Benchmark mode: Look inside benchmark_root / subject_name / filename
-            if not hasattr(self, 'subject_name') or not self.subject_name:
-                 logger.error("Subject name not set when trying to find data file in benchmark mode.")
-                 return None
-            benchmark_data_path = os.path.join(benchmark_root, self.subject_name, filename)
-            if os.path.exists(benchmark_data_path):
-                logger.info(f"[Benchmark Mode] Found data file: {benchmark_data_path}") # 英文日志
-                return benchmark_data_path
-            else:
-                logger.warning(f"[Benchmark Mode] Data file not found: {benchmark_data_path}") # 英文日志
-                return None
+        Args:
+            task_name: The full name of the task (e.g., "custom_task_abc").
+            split_type: The type of split required ("dev" or "test").
+
+        Returns:
+            The absolute path to the data file, or None if not found.
+
+        Raises:
+            FileNotFoundError: If dataset_info.json cannot be found.
+            ValueError: If no matching entry with 'file_name' is found in dataset_info.json.
+        """
+        # 1. 定位并加载 dataset_info.json (优先使用预加载的)
+        if hasattr(self, "dataset_info") and self.dataset_info:
+            dataset_info = self.dataset_info
+            logger.debug("Using preloaded dataset_info.json") # English log
         else:
-            # Standard mode: Check task_dir then fallback to ./data
-            task_dir = getattr(self.eval_args, "task_dir", "./data") # Get task_dir or default
-
-            # Try in task_dir first
-            path_in_task_dir = os.path.join(task_dir, filename)
-            if os.path.exists(path_in_task_dir):
-                logger.info(f"[Standard Mode] Found data file in task_dir: {path_in_task_dir}") # 英文日志
-                return path_in_task_dir
-            else:
-                # Fallback to ./data (only if task_dir is not already './data')
+            task_dir = getattr(self.eval_args, "task_dir", "./data")
+            dataset_info_path = os.path.join(task_dir, "dataset_info.json")
+            if not os.path.exists(dataset_info_path):
+                # Fallback check in ./data if task_dir is different
                 if os.path.abspath(task_dir) != os.path.abspath("./data"):
-                    path_in_data_dir = os.path.join("./data", filename)
-                    if os.path.exists(path_in_data_dir):
-                        logger.info(f"[Standard Mode] Found data file in fallback ./data: {path_in_data_dir}") # 英文日志
-                        return path_in_data_dir
+                    fallback_info_path = os.path.join("./data", "dataset_info.json")
+                    if os.path.exists(fallback_info_path):
+                        dataset_info_path = fallback_info_path
+                        logger.warning(f"dataset_info.json not found in task_dir '{task_dir}', using fallback: {fallback_info_path}") # English log
+                    else:
+                         raise FileNotFoundError(f"dataset_info.json not found in task directory: {task_dir} or fallback './data'") # English log
+                else:
+                    raise FileNotFoundError(f"dataset_info.json not found in task directory: {dataset_info_path}") # English log
 
-            # If not found in either location in standard mode
-            logger.warning(f"[Standard Mode] Data file '{filename}' not found in task_dir '{task_dir}' or fallback './data'.") # 英文日志
-            return None
+            logger.debug(f"Loading dataset_info.json from: {dataset_info_path}") # English log
+            try:
+                with open(dataset_info_path, "r", encoding="utf-8") as f:
+                    dataset_info = json.load(f)
+            except Exception as e:
+                logger.error(f"Failed to load or parse dataset_info.json from {dataset_info_path}: {e}") # English log
+                raise
+
+        # 2. 使用完整任务名查找
+        logger.info(f"Searching dataset_info.json for task_name='{task_name}' and split_type='{split_type}'") # English log
+
+        # 3. 查找匹配的条目
+        matches = []
+        potential_keys = [
+            f"{task_name}_{split_type}", # e.g., custom_task_abc_test
+            task_name                   # e.g., custom_task_abc (match only if split field matches)
+        ]
+        logger.debug(f"Potential keys to search: {potential_keys}") # English log
+
+        for key, entry in dataset_info.items():
+            # 检查 key 是否匹配潜在名称
+            key_matches_pattern = key in potential_keys
+            # 检查 "split" 字段是否匹配 (如果 entry 中有 split 字段)
+            split_field = entry.get("split")
+            split_matches = split_field == split_type
+
+            # 检查 'file_name' 字段是否存在
+            file_name = entry.get("file_name")
+
+            logger.debug(f"Checking entry: key='{key}', entry_split='{split_field}', target_split='{split_type}', file_name='{file_name}'") # English log
+
+            # 条件1：key 完全匹配 (e.g., "custom_task_abc_test") 且有 file_name
+            if key == f"{task_name}_{split_type}" and file_name:
+                 matches.append({"key": key, "file_name": file_name, "priority": 1}) # Higher priority
+                 logger.debug(f"Found priority match (key suffix): key='{key}', file_name='{file_name}'") # English log
+                 continue # Found the most specific match, no need to check further for this entry
+
+            # 条件2：key 是任务名 (e.g., "custom_task_abc") 且 split 字段匹配 且有 file_name
+            if key == task_name and split_matches and file_name:
+                matches.append({"key": key, "file_name": file_name, "priority": 0}) # Lower priority
+                logger.debug(f"Found match (task name + split field): key='{key}', file_name='{file_name}'") # English log
+
+        # 4. 处理查找结果
+        if not matches:
+            # 对于 'dev' split，允许找不到
+            if split_type == "dev":
+                logger.warning(f"No matching entry found in dataset_info.json for task '{task_name}' and split 'dev' with a 'file_name'. Proceeding without dev set.") # English log
+                return None
+            else:
+                # 对于 'test' split，必须找到
+                raise ValueError(f"No matching entry found in dataset_info.json for task '{task_name}' and split '{split_type}' with a 'file_name'.") # English log
+
+        # 按优先级排序 (高优先级在前)
+        matches.sort(key=lambda x: x["priority"], reverse=True)
+
+        selected_match = matches[0] # 选择最高优先级的匹配项
+        if len(matches) > 1:
+             logger.warning(f"Multiple entries found in dataset_info.json for task '{task_name}' and split '{split_type}'. Prioritizing match with key '{selected_match['key']}'. Found matches: {matches}") # English log
+        logger.info(f"Selected match: key='{selected_match['key']}', file_name='{selected_match['file_name']}'") # English log
+
+
+        # 5. 构建并验证文件路径
+        #    假设 file_name 是相对于 dataset_info.json 所在目录或 ./data 的路径
+        task_dir = getattr(self.eval_args, "task_dir", "./data")
+        file_path_in_task_dir = os.path.join(task_dir, selected_match["file_name"])
+        file_path_in_data_dir = os.path.join("./data", selected_match["file_name"])
+
+        if os.path.exists(file_path_in_task_dir):
+            logger.info(f"Resolved data file path in task_dir: {file_path_in_task_dir}") # English log
+            return file_path_in_task_dir
+        elif os.path.abspath(task_dir) != os.path.abspath("./data") and os.path.exists(file_path_in_data_dir):
+            logger.warning(f"File '{selected_match['file_name']}' not found in task_dir '{task_dir}', but found in fallback './data'. Using fallback path: {file_path_in_data_dir}") # English log
+            return file_path_in_data_dir
+        else:
+            # 如果两个地方都找不到
+            error_msg = f"Data file specified in dataset_info.json ('{selected_match['file_name']}') not found at expected path: {file_path_in_task_dir}"
+            if os.path.abspath(task_dir) != os.path.abspath("./data"):
+                 error_msg += f" or fallback path: {file_path_in_data_dir}"
+            # 对于 'dev' split，找不到时返回 None 而不是抛出错误
+            if split_type == "dev":
+                 logger.warning(error_msg + ". Proceeding without dev set.") # English log
+                 return None
+            else:
+                 raise FileNotFoundError(error_msg) # English log
 
     def _load_dataset_options(self) -> Dict:
         """加载数据集选项配置"""
@@ -670,24 +781,26 @@ class CLEvalEvaluator(BaseEvaluator):
                 outputs.extend([{"prediction": "", "is_correct": False, "match_type": "format"}] * min(self.eval_args.batch_size, len(inputs) - i))
                 continue
 
-            # 生成答案
-            generation_config = {
-                "max_new_tokens": 32,  # 生成的最大token数
-                "num_beams": 1,  # 使用贪婪解码
-                "early_stopping": False,  # 不提前停止生成
-                "do_sample": False,  # 不使用采样
-                "temperature": None,  # 不设置温度
-                "top_p": None,  # 不设置top_p
+            # 使用 GeneratingArguments 配置生成参数
+            generation_kwargs = {
+                "max_new_tokens": self.generating_args.max_new_tokens,
+                "num_beams": self.generating_args.num_beams,
+                "do_sample": self.generating_args.do_sample,
+                "temperature": self.generating_args.temperature,
+                "top_p": self.generating_args.top_p,
+                "top_k": self.generating_args.top_k,
+                "repetition_penalty": self.generating_args.repetition_penalty,
+                "length_penalty": self.generating_args.length_penalty,
+                # Handle potential absence of early_stopping in older GeneratingArguments
+                "early_stopping": getattr(self.generating_args, "early_stopping", False), 
+                # Handle potential absence of no_repeat_ngram_size
+                "no_repeat_ngram_size": getattr(self.generating_args, "no_repeat_ngram_size", 0), 
                 "pad_token_id": self.tokenizer.pad_token_id,
                 "eos_token_id": self.tokenizer.eos_token_id,
-                "repetition_penalty": 1.0,  # 不使用重复惩罚
-                "length_penalty": 1.0,  # 不使用长度惩罚
-                "no_repeat_ngram_size": 0  # 不限制n-gram重复
             }
-            
             generated = self.model.generate(
                 **batch_slice,
-                **generation_config
+                **generation_kwargs
             )
             
             # 解码生成的文本
@@ -724,62 +837,83 @@ class CLEvalEvaluator(BaseEvaluator):
     
     def evaluate_custom_dataset(self) -> Dict:
         """评估自定义数据集"""
-        # 设置subject_name
-        self.subject_name = self.eval_args.task.split("_")[0]
-        
-        # --- Updated data directory and file path logic ---
-        # task_dir = getattr(self.eval_args, "task_dir", "./data") # Removed, logic moved to find_data_file
-        # data_dir = "./data" # Removed hardcoded path
+        # 不再需要提取 subject_name，使用完整的 task name
+        # self.subject_name = self.eval_args.task.split("_")[0]
 
-        # Helper function to find file path - MOVED TO CLASS METHOD: _find_data_file
-        # def find_data_file(filename):
-        #     ...
+        # --- Updated data file lookup using dataset_info.json ---
+        task_name = self.eval_args.task
+        self.dev_examples = []
+        dev_file_path = None # 初始化 dev_file_path
 
-        # Load few-shot examples if they exist
-        dev_filename = f"{self.subject_name}_dev.json"
-        # dev_file = find_data_file(dev_filename) # Use class method
-        dev_file = self._find_data_file(dev_filename)
+        try:
+            # 尝试查找 dev 文件路径
+            logger.info(f"Attempting to find 'dev' split file for task: {task_name}") # English log
+            dev_file_path = self._find_data_file(task_name=task_name, split_type="dev")
 
-        if dev_file and self.eval_args.n_shot > 0:
-            logger.info(f"\nLoading {self.eval_args.n_shot}-shot examples from: {dev_file}") # 英文日志
-            with open(dev_file, "r", encoding="utf-8") as f:
-                self.dev_examples = json.load(f)
-                if isinstance(self.dev_examples, dict):
-                    self.dev_examples = self.dev_examples.get("examples", self.dev_examples)
-                self.dev_examples = self.dev_examples[:self.eval_args.n_shot]
-            logger.info(f"Successfully loaded {len(self.dev_examples)} examples for few-shot evaluation") # 英文日志
+            if dev_file_path and self.eval_args.n_shot > 0:
+                logger.info(f"Loading {self.eval_args.n_shot}-shot examples from: {dev_file_path}") # English log
+                try:
+                    with open(dev_file_path, "r", encoding="utf-8") as f:
+                        dev_data = json.load(f)
+                        # Handle different potential structures (list or dict with "examples")
+                        if isinstance(dev_data, dict) and "examples" in dev_data:
+                            loaded_dev_examples = dev_data["examples"]
+                        elif isinstance(dev_data, list):
+                            loaded_dev_examples = dev_data
+                        else:
+                            logger.warning(f"Unexpected format in dev file: {dev_file_path}. Expected list or dict with 'examples' key.") # English log
+                            loaded_dev_examples = []
+
+                        self.dev_examples = loaded_dev_examples[:self.eval_args.n_shot]
+                        logger.info(f"Successfully loaded {len(self.dev_examples)} examples for {self.eval_args.n_shot}-shot evaluation") # English log
+                except Exception as e:
+                    logger.error(f"Error loading or processing dev file {dev_file_path}: {e}") # English log
+                    self.dev_examples = [] # Reset on error
+            elif self.eval_args.n_shot > 0:
+                 # _find_data_file already logs a warning if 'dev' is not found
+                 logger.info(f"Proceeding with 0-shot evaluation as 'dev' file was not found or n_shot is 0.") # English log
+            else: # n_shot is 0
+                logger.info("Proceeding with 0-shot evaluation (n_shot=0).") # English log
+
+            # 查找 test 文件路径 (必须找到)
+            logger.info(f"Attempting to find 'test' split file for task: {task_name}") # English log
+            test_file_path = self._find_data_file(task_name=task_name, split_type="test")
+
+            if not test_file_path:
+                 # _find_data_file should raise an error if test file is mandatory and not found
+                 # This is a safeguard, but the error should ideally originate from _find_data_file
+                 raise FileNotFoundError(f"Test file for task '{task_name}' could not be located via dataset_info.json.") # English log
+
+            logger.info(f"Loading test examples from: {test_file_path}") # English log
+            try:
+                with open(test_file_path, "r", encoding="utf-8") as f:
+                    test_data = json.load(f)
+                    # Handle different potential structures
+                    if isinstance(test_data, dict) and "examples" in test_data:
+                        test_examples_raw = test_data["examples"]
+                    elif isinstance(test_data, list):
+                        test_examples_raw = test_data
+                    else:
+                        logger.error(f"Unexpected format in test file: {test_file_path}. Expected list or dict with 'examples' key.") # English log
+                        return {} # Cannot proceed without test data
+            except Exception as e:
+                logger.error(f"Error loading or processing test file {test_file_path}: {e}") # English log
+                return {} # Cannot proceed without test data
+
+        except (FileNotFoundError, ValueError) as e:
+            logger.error(f"Failed to find required dataset files for task {task_name} using dataset_info.json: {e}") # English log
+            # 如果找不到 test 文件或 dataset_info.json，则无法继续
+            return {} # Return empty dict or re-raise error
+        # --- End of updated data file lookup ---
+
+        # 为测试样本添加索引（如果需要，用于多adapter模式下的样本分配）
+        if self.using_multi_adapter:
+             logger.debug("Adding indices to test examples for multi-adapter mode.") # English log
+             self.test_examples = [
+                 {**example, "index": i} for i, example in enumerate(test_examples_raw)
+             ]
         else:
-            self.dev_examples = []
-            if self.eval_args.n_shot > 0:
-                logger.warning(f"\nWarning: Dev file '{dev_filename}' not found in '{task_dir}' or './data'. Performing zero-shot evaluation.") # 英文日志
-
-        # Load test set
-        test_filename = f"{self.subject_name}_test.json"
-        # test_file = find_data_file(test_filename) # Use class method
-        test_file = self._find_data_file(test_filename)
-
-        if not test_file:
-            # Construct potential paths for error message clarity
-            task_dir_msg = getattr(self.eval_args, "task_dir", "./data")
-            benchmark_dir_msg = getattr(self.eval_args, 'benchmark_dir_internal', None)
-            is_benchmark_msg = getattr(self.eval_args, 'is_benchmark_mode', False)
-            if is_benchmark_msg and benchmark_dir_msg:
-                 expected_path_msg = os.path.join(benchmark_dir_msg, self.subject_name, test_filename)
-                 raise ValueError(f"[Benchmark Mode] Test dataset '{test_filename}' not found at expected path: {expected_path_msg}")
-            else:
-                 fallback_path_msg = os.path.join("./data", test_filename)
-                 raise ValueError(f"[Standard Mode] Test dataset '{test_filename}' not found in task_dir '{task_dir_msg}' or fallback '{fallback_path_msg}'.")
-
-        logger.info(f"Loading test examples from: {test_file}") # 英文日志
-        with open(test_file, "r", encoding="utf-8") as f:
-            self.test_examples = json.load(f)
-            if isinstance(self.test_examples, dict):
-                self.test_examples = self.test_examples.get("examples", self.test_examples)
-        # --- End of updated logic ---
-
-        # 为测试样本添加索引（用于多adapter模式下的样本分配）
-        for idx, example in enumerate(self.test_examples):
-            example["index"] = idx
+             self.test_examples = test_examples_raw
 
         # 创建保存目录
         os.makedirs(self.eval_args.save_dir, exist_ok=True)

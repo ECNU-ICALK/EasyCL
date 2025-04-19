@@ -105,7 +105,7 @@ class CLCommandGenerator:
         # 从train_kwargs中解析任务列表
         self.tasks = self.train_kwargs.get("dataset", "").split(",")
         if not self.tasks or not self.tasks[0]:
-            logger.warning("未在训练参数中找到有效的dataset参数，tasks列表将为空")
+            #logger.warning("未在训练参数中找到有效的dataset参数，tasks列表将为空")
             self.tasks = []
         
         # Load config only once
@@ -633,7 +633,7 @@ class CLWorkflow:
             else:
                 # Fallback or default? Assume DataArguments can handle None or default
                 dataset_dir = None
-                logger.warning(f"'{dataset_dir_key}' not found in primary parameters for evaluation setup. Using None.")
+                #logger.warning(f"'{dataset_dir_key}' not found in primary parameters for evaluation setup. Using None.")
 
             model_args = ModelArguments(
                 model_name_or_path=model_path

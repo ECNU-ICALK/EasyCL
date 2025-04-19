@@ -12,9 +12,7 @@
 <summary>🚧 <strong>已知问题 / 即将推出的功能</strong></summary>
 
 *   [问题] 伪回放 (Pseudo Replay) 方法读取的是 tokenized 数据而非原始数据。
-*   [问题] 评估未能正确依赖 `dataset_info.json`。
 *   [问题] 梯度情景记忆 (GEM) 方法存在显存溢出问题。
-*   [问题] 评估时使用了过于严格的生成参数（例如 MMLU 的参数）。
 *   [待办] 对 MoE-LoRA 相关方法与原实现进行结果比较。
 *   [功能] 计划添加对 [新方法/功能] 的支持。
 *   优化 [特定过程] 中的内存使用。
@@ -24,6 +22,8 @@
 <details>
 <summary>✅ <strong>已解决问题 / 已完成功能</strong></summary>
 
+*   [已解决] 评估未能正确依赖 `dataset_info.json`。
+*   [已解决] 评估时使用了过于严格的生成参数（例如 MMLU 的参数）。
 *   （此部分将在问题解决和功能完成后更新。格式：`[类型 #ID] 描述 (YYYY-MM-DD)`）
 
 </details>
@@ -71,15 +71,17 @@ EasyCL 是 LLaMA Factory 框架的扩展，专注于大型语言模型的持续�
 
 7. **I-LoRA (基于插值的 LoRA)** - [查看实现](src/easycl/cl/ilora/README.md) - [Analyzing and Reducing Catastrophic Forgetting in Parameter Efficient Tuning](https://arxiv.org/pdf/2402.18865)
 
-8. **CLMoE (持续学习混合专家与 LoRA)** - [查看实现](src/easycl/cl/clmoe/README.md) - [CL-MoE: Enhancing Multimodal Large Language Model with Dual Momentum Mixture-of-Experts for Continual Visual Question Answering](https://arxiv.org/pdf/2503.00413)
+8. **CLMoE (双动量混合专家 LoRA)** - [查看实现](src/easycl/cl/clmoe/README.md) - [CL-MoE: Enhancing Multimodal Large Language Model with Dual Momentum Mixture-of-Experts for Continual Visual Question Answering](https://arxiv.org/pdf/2503.00413)
 
-9. **ABSCL (ABSA LLM-CL)** - [查看实现](src/easycl/cl/abscl/README.md) - [Boosting Large Language Models with Continual Learning for Aspect-based Sentiment Analysis](https://arxiv.org/pdf/2405.05496)
+9. **MOE-LoRA (混合专家与低秩适应)** - [查看实现](src/easycl/cl/moe/README.md) - [CoIN: A Benchmark of Continual Instruction Tuning for Multimodal Large Language Models](https://proceedings.neurips.cc/paper_files/paper/2024/file/6a45500d9eda640deed90d8a62742be5-Paper-Datasets_and_Benchmarks_Track.pdf)
 
-10. **动态 ConPet** - [查看实现](src/easycl/cl/dynamic_conpet/README.md) - [ConPET: Continual Parameter-Efficient Tuning for Large Language Models](https://arxiv.org/pdf/2309.14763)
+10. **ABSCL (ABSA LLM-CL)** - [查看实现](src/easycl/cl/abscl/README.md) - [Boosting Large Language Models with Continual Learning for Aspect-based Sentiment Analysis](https://arxiv.org/pdf/2405.05496)
 
-11. **自合成排练 (SSR)** - [查看实现](src/easycl/cl/ssr/README.md) - [Mitigating catastrophic forgetting in large language models with self-synthesized rehearsal](https://arxiv.org/pdf/2403.01244)
+11. **动态 ConPet** - [查看实现](src/easycl/cl/dynamic_conpet/README.md) - [ConPET: Continual Parameter-Efficient Tuning for Large Language Models](https://arxiv.org/pdf/2309.14763)
 
-12. **伪回放 (Pseudo Replay)** - [查看实现](src/easycl/cl/pseudo_replay/README.md) - [Experience replay for continual learning](https://proceedings.neurips.cc/paper_files/paper/2019/file/fa7cdfad1a5aaf8370ebeda47a1ff1c3-Paper.pdf)
+12. **自合成排练 (SSR)** - [查看实现](src/easycl/cl/ssr/README.md) - [Mitigating catastrophic forgetting in large language models with self-synthesized rehearsal](https://arxiv.org/pdf/2403.01244)
+
+13. **伪回放 (Pseudo Replay)** - [查看实现](src/easycl/cl/pseudo_replay/README.md) - [Experience replay for continual learning](https://proceedings.neurips.cc/paper_files/paper/2019/file/fa7cdfad1a5aaf8370ebeda47a1ff1c3-Paper.pdf)
 
 有关持续学习方法的更多详细信息，请参阅 [src/easycl/cl/README.md](src/easycl/cl/README.md)。
 

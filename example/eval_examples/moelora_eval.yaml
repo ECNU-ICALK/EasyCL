@@ -8,3 +8,8 @@ save_dir: saves/cl_eval_results
 eval_mode: single
 use_moelora_eval: true
 cl_tuning_type: lora
+
+# 评估采样参数
+num_beams: 1
+do_sample: false
+max_new_tokens: 32

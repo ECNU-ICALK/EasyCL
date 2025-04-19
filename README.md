@@ -12,9 +12,7 @@
 <summary>🚧 <strong>Known Issues / Upcoming Features</strong></summary>
 
 *   [Issue] Pseudo-replay method reads tokenized data instead of raw data.
-*   [Issue] Evaluation does not correctly depend on `dataset_info.json`.
 *   [Issue] Gradient Episodic Memory (GEM) causes out-of-memory errors.
-*   [Issue] Evaluation uses overly strict generation parameters (e.g., MMLU parameters).
 *   [TODO] Compare results of MoE-LoRA related methods with original implementations.
 *   [Feature] Planning to add support for [New Method/Feature].
 *   Optimizing memory usage during [Specific Process].
@@ -24,6 +22,8 @@
 <details>
 <summary>✅ <strong>Resolved Issues / Completed Features</strong></summary>
 
+*   [Resolved] Evaluation does not correctly depend on `dataset_info.json`.
+*   [Resolved] Evaluation uses overly strict generation parameters (e.g., MMLU parameters).
 *   (This section will be updated as issues are resolved and features are completed. Format: `[Type #ID] Description (YYYY-MM-DD)`)
 
 </details>
@@ -71,15 +71,17 @@ For detailed implementation of the continual learning workflow, see [src/easycl/
 
 7. **I-LoRA (Interpolation-based LoRA)** - [View Implementation](src/easycl/cl/ilora/README.md) - [Analyzing and Reducing Catastrophic Forgetting in Parameter Efficient Tuning](https://arxiv.org/pdf/2402.18865)
 
-8. **CLMoE (Continual Learning Mixture of Experts with LoRA)** - [View Implementation](src/easycl/cl/clmoe/README.md) - [CL-MoE: Enhancing Multimodal Large Language Model with Dual Momentum Mixture-of-Experts for Continual Visual Question Answering](https://arxiv.org/pdf/2503.00413)
+8. **CLMoE (Dual Momentum Mixture-of-Experts LoRA)** - [View Implementation](src/easycl/cl/clmoe/README.md) - [CL-MoE: Enhancing Multimodal Large Language Model with Dual Momentum Mixture-of-Experts for Continual Visual Question Answering](https://arxiv.org/pdf/2503.00413)
 
-9. **ABSCL (ABSA LLM-CL)** - [View Implementation](src/easycl/cl/abscl/README.md) - [Boosting Large Language Models with Continual Learning for Aspect-based Sentiment Analysis](https://arxiv.org/pdf/2405.05496)
+9. **MOE-LoRA (Mixture of Experts with LoRA)** - [View Implementation](src/easycl/cl/moe/README.md) - [CoIN: A Benchmark of Continual Instruction Tuning for Multimodal Large Language Models](https://proceedings.neurips.cc/paper_files/paper/2024/file/6a45500d9eda640deed90d8a62742be5-Paper-Datasets_and_Benchmarks_Track.pdf)
 
-10. **Dynamic ConPet** - [View Implementation](src/easycl/cl/dynamic_conpet/README.md) - [ConPET: Continual Parameter-Efficient Tuning for Large Language Models](https://arxiv.org/pdf/2309.14763)
+10. **ABSCL (ABSA LLM-CL)** - [View Implementation](src/easycl/cl/abscl/README.md) - [Boosting Large Language Models with Continual Learning for Aspect-based Sentiment Analysis](https://arxiv.org/pdf/2405.05496)
 
-11. **Self-Synthesized Rehearsal (SSR)** - [View Implementation](src/easycl/cl/ssr/README.md) - [Mitigating catastrophic forgetting in large language models with self-synthesized rehearsal](https://arxiv.org/pdf/2403.01244)
+11. **Dynamic ConPet** - [View Implementation](src/easycl/cl/dynamic_conpet/README.md) - [ConPET: Continual Parameter-Efficient Tuning for Large Language Models](https://arxiv.org/pdf/2309.14763)
 
-12. **Pseudo Replay** - [View Implementation](src/easycl/cl/pseudo_replay/README.md) - [Experience replay for continual learning](https://proceedings.neurips.cc/paper_files/paper/2019/file/fa7cdfad1a5aaf8370ebeda47a1ff1c3-Paper.pdf)
+12. **Self-Synthesized Rehearsal (SSR)** - [View Implementation](src/easycl/cl/ssr/README.md) - [Mitigating catastrophic forgetting in large language models with self-synthesized rehearsal](https://arxiv.org/pdf/2403.01244)
+
+13. **Pseudo Replay** - [View Implementation](src/easycl/cl/pseudo_replay/README.md) - [Experience replay for continual learning](https://proceedings.neurips.cc/paper_files/paper/2019/file/fa7cdfad1a5aaf8370ebeda47a1ff1c3-Paper.pdf)
 
 For more details about the continual learning methods, see [src/easycl/cl/README.md](src/easycl/cl/README.md).
 
