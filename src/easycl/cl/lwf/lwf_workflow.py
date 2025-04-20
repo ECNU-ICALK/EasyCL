@@ -18,6 +18,7 @@ import os
 import copy
 from typing import TYPE_CHECKING, Optional
 import traceback
+from debugprint import debugprint
 from llamafactory.data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer
 from llamafactory.extras.constants import IGNORE_INDEX
 from llamafactory.extras.logging import get_logger
@@ -47,6 +48,8 @@ def run_sft_lwf(
     generating_args: "GeneratingArguments",
     callbacks: Optional[list["TrainerCallback"]] = None,
 ):
+    debugprint(f"run_sft_lwf 已调用.")
+    debugprint(f"收到的 cl_finetuning_args: {cl_finetuning_args}")
     tokenizer_module = load_tokenizer(model_args)
     tokenizer = tokenizer_module["tokenizer"]
     template = get_template_and_fix_tokenizer(tokenizer, data_args)
@@ -88,6 +91,11 @@ def run_sft_lwf(
 
 
     # Initialize our Trainer
+    debugprint(f"正在初始化 LWFTrainer.")
+    debugprint(f"传递给 LWFTrainer 的参数 - use_lwf: {cl_finetuning_args.use_lwf}")
+    debugprint(f"传递给 LWFTrainer 的参数 - lwf_temperature: {cl_finetuning_args.lwf_temperature}")
+    debugprint(f"传递给 LWFTrainer 的参数 - lwf_alpha: {cl_finetuning_args.lwf_alpha}")
+    debugprint(f"传递给 LWFTrainer 的参数 - previous_task_model 路径: {cl_finetuning_args.previous_task_model}")
     trainer = LWFTrainer(
         model=model,
         args=training_args,
@@ -109,8 +117,10 @@ def run_sft_lwf(
     if training_args.do_train:
         # Modify LWF logic
         if cl_finetuning_args.use_lwf:
+            debugprint(f"LWF 已启用 (cl_finetuning_args.use_lwf = {cl_finetuning_args.use_lwf})。继续进行 LWF 设置。")
             if cl_finetuning_args.previous_task_model:
                 logger.info("Loading previous task model for LWF...")
+                debugprint(f"尝试从路径加载先前任务模型: {cl_finetuning_args.previous_task_model}")
                 try:
                     # Save current adapter_name_or_path and model_name_or_path
                     current_adapter = copy.deepcopy(model_args.adapter_name_or_path)  # Deep copy to avoid reference issues
@@ -186,6 +196,7 @@ def run_sft_lwf(
 
         # Add LWF-related metrics
         if cl_finetuning_args.use_lwf:
+            debugprint(f"LWF 已使用 (cl_finetuning_args.use_lwf = {cl_finetuning_args.use_lwf})，正在添加 LWF 指标。")
             # Calculate LWF loss
             lwf_loss = trainer.lwf.lwf_loss(trainer.model(**next(iter(trainer.get_train_dataloader()))).logits, next(iter(trainer.get_train_dataloader()))).item()
             train_result.metrics["lwf_loss"] = lwf_loss

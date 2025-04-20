@@ -28,6 +28,9 @@ from .ewc_trainer import EWCSeq2SeqTrainer
 from llamafactory.hparams import DataArguments, FinetuningArguments, GeneratingArguments, ModelArguments
 from easycl.hparams import CLFinetuningArguments
 import traceback
+def debugprint(*args, **kwargs):
+    pass
+
 
 if TYPE_CHECKING:
     from transformers import Seq2SeqTrainingArguments, TrainerCallback
@@ -45,6 +48,10 @@ def run_sft_ewc(
     generating_args: "GeneratingArguments",
     callbacks: Optional[List["TrainerCallback"]] = None,
 ):
+    # --- Debug Print Start ---
+    debugprint(f"CL Finetuning Args in run_sft_ewc (start): {cl_finetuning_args}")
+    # --- Debug Print End ---
+
     tokenizer_module = load_tokenizer(model_args)
     tokenizer = tokenizer_module["tokenizer"]
     template = get_template_and_fix_tokenizer(tokenizer, data_args)
@@ -84,30 +91,9 @@ def run_sft_ewc(
     gen_kwargs["pad_token_id"] = tokenizer.pad_token_id
     gen_kwargs["logits_processor"] = get_logits_processor()
 
-    # 添加O-LoRA相关的验证和初始化
-    if cl_finetuning_args.use_olora:
-        if not cl_finetuning_args.current_task_id:
-            logger.warning(
-                "No current_task_id provided for O-LoRA. "
-                "Will try to extract from the output directory name."
-            )
-            # 尝试从输出目录名称中提取任务ID
-            try:
-                cl_finetuning_args.current_task_id = os.path.basename(training_args.output_dir)
-            except:
-                raise ValueError(
-                    "Could not determine current_task_id. "
-                    "Please provide it explicitly for O-LoRA."
-                )
-                
-        # 确保O-LoRA历史路径存在
-        os.makedirs(cl_finetuning_args.olora_history_path, exist_ok=True)
-        
-        logger.info("O-LoRA is enabled with following parameters:")
-        logger.info(f"- Current task ID: {cl_finetuning_args.current_task_id}")
-        logger.info(f"- Orthogonal lambda: {cl_finetuning_args.orthogonal_lambda}")
-        logger.info(f"- L2 lambda: {cl_finetuning_args.l2_lambda}")
-        logger.info(f"- History path: {cl_finetuning_args.olora_history_path}")
+    # --- Debug Print Start ---
+    debugprint(f"EWC Args for Trainer: use_ewc={cl_finetuning_args.use_ewc}, ewc_lambda={cl_finetuning_args.ewc_lambda}")
+    # --- Debug Print End ---
 
     # Initialize our Trainer
     trainer = EWCSeq2SeqTrainer(
@@ -134,6 +120,9 @@ def run_sft_ewc(
         if cl_finetuning_args.use_ewc:
             if cl_finetuning_args.previous_task_data:
                 logger.info("Loading previous task data for EWC...")
+                # --- Debug Print Start ---
+                debugprint(f"EWC Fisher Params: previous_task_data={cl_finetuning_args.previous_task_data}, ewc_num_samples={cl_finetuning_args.ewc_num_samples}")
+                # --- Debug Print End ---
                 try:
                     # Save current dataset configuration
                     current_dataset = data_args.dataset

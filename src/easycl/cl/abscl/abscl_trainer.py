@@ -1,17 +1,3 @@
-# Copyright 2025 the LlamaFactory team.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import os
 import torch
 import json
@@ -19,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 import safetensors.torch
 from safetensors.torch import load_file as safe_load_file
 import re
+# from debugprint import debugprint
 
 from llamafactory.train.sft.trainer import CustomSeq2SeqTrainer
 from llamafactory.extras import logging
@@ -50,12 +37,20 @@ class ABSCLTrainer(CustomSeq2SeqTrainer):
             gen_kwargs=gen_kwargs,
             **kwargs
         )
+        # debugprint(f"Entering ABSCLTrainer __init__") # 使用英文
+        logger.info_rank0(f"Entering ABSCLTrainer __init__") # 添加 logger
+        logger.info_rank0(f"Incoming cl_finetuning_args: {cl_finetuning_args}") # 添加 logger
+        
         # Store cl_finetuning_args for later use
         self.cl_finetuning_args = cl_finetuning_args
         
         # Set loss weights
         self.orthogonal_lambda = cl_finetuning_args.abscl_orthogonal_lambda
         self.l2_lambda = cl_finetuning_args.abscl_shared_l2_lambda
+        # debugprint(f"orthogonal_lambda set to: {self.orthogonal_lambda}") # 使用英文
+        logger.info_rank0(f"orthogonal_lambda set to: {self.orthogonal_lambda}") # 添加 logger
+        # debugprint(f"l2_lambda set to: {self.l2_lambda}") # 使用英文
+        logger.info_rank0(f"l2_lambda set to: {self.l2_lambda}") # 添加 logger
         
         # Set task ID and paths
         self.task_id = cl_finetuning_args.current_task_id or "task"
@@ -63,6 +58,12 @@ class ABSCLTrainer(CustomSeq2SeqTrainer):
             os.path.dirname(self.args.output_dir)
         )
         self.shared_adapter_path = os.path.join(adapters_path, "shared_adapter")
+        # debugprint(f"task_id set to: {self.task_id}") # 使用英文
+        logger.info_rank0(f"task_id set to: {self.task_id}") # 添加 logger
+        # debugprint(f"adapters_path set to: {adapters_path}") # 使用英文
+        logger.info_rank0(f"adapters_path set to: {adapters_path}") # 添加 logger
+        # debugprint(f"shared_adapter_path set to: {self.shared_adapter_path}") # 使用英文
+        logger.info_rank0(f"shared_adapter_path set to: {self.shared_adapter_path}") # 添加 logger
         
         # Use device string instead of device object
         device = self.args.device.type if hasattr(self.args.device, "type") else self.args.device
@@ -81,17 +82,24 @@ class ABSCLTrainer(CustomSeq2SeqTrainer):
         # Load shared adapter
         self._load_shared_adapter()
         
-        logger.info_rank0(f"Configured ABSCL trainer with O-LoRA method")
-        logger.info_rank0(f"- Shared adapter path: {self.shared_adapter_path}")
-        logger.info_rank0(f"- Orthogonal constraint weight: {self.orthogonal_lambda}")
-        logger.info_rank0(f"- L2 regularization weight: {self.l2_lambda}")
+        # debugprint(f"Configured ABSCL trainer (O-LoRA method)") # 使用英文
+        logger.info_rank0(f"Configured ABSCL trainer (O-LoRA method)") # 添加 logger
+        # debugprint(f"- Shared adapter path: {self.shared_adapter_path}") # 使用英文
+        logger.info_rank0(f"- Shared adapter path: {self.shared_adapter_path}") # 添加 logger
+        # debugprint(f"- Orthogonal constraint weight: {self.orthogonal_lambda}") # 使用英文
+        logger.info_rank0(f"- Orthogonal constraint weight: {self.orthogonal_lambda}") # 添加 logger
+        # debugprint(f"- L2 regularization weight: {self.l2_lambda}") # 使用英文
+        logger.info_rank0(f"- L2 regularization weight: {self.l2_lambda}") # 添加 logger
 
     def _load_shared_adapter(self):
         """Load shared adapter as reference adapter for orthogonal constraint"""
+        # debugprint(f"Entering _load_shared_adapter, trying to load shared adapter: {self.shared_adapter_path}") # 使用英文
+        logger.info_rank0(f"Entering _load_shared_adapter, trying to load shared adapter: {self.shared_adapter_path}") # 添加 logger
         try:
             # Check if shared adapter exists
             if not os.path.exists(self.shared_adapter_path):
                 logger.warning_rank0(f"Shared adapter path does not exist: {self.shared_adapter_path}")
+                # debugprint(f"Shared adapter path does not exist: {self.shared_adapter_path}") # 使用英文
                 return False
                 
             # Verify shared adapter configuration files
@@ -109,34 +117,50 @@ class ABSCLTrainer(CustomSeq2SeqTrainer):
             # Set up adapters using same method as O-LoRA
             result = self.olora.setup_adapters(self.task_id)
             if result:
-                logger.info_rank0(f"Successfully set up O-LoRA adapters using shared adapter: shared_adapter and current adapter: {self.task_id}")
+                # debugprint(f"Successfully set up O-LoRA adapters: shared adapter 'shared_adapter' and current adapter '{self.task_id}'") # 使用英文
+                 logger.info_rank0(f"Successfully set up O-LoRA adapters: shared adapter 'shared_adapter' and current adapter '{self.task_id}'") # 添加 logger
             else:
                 logger.warning_rank0(f"Failed to set up adapters")
+                # debugprint(f"Failed to set up O-LoRA adapters") # 使用英文
                 
             # Load shared adapter as orthogonal reference
             result = self.olora.load_prev_adapter("shared_adapter")
             if result:
-                logger.info_rank0(f"Successfully loaded shared adapter as orthogonal reference")
+                # debugprint(f"Successfully loaded shared adapter as orthogonal reference") # 使用英文
+                 logger.info_rank0(f"Successfully loaded shared adapter as orthogonal reference") # 添加 logger
             else:
                 logger.warning_rank0(f"Failed to load shared adapter")
+                # debugprint(f"Failed to load shared adapter as orthogonal reference") # 使用英文
                 
             return result
         except Exception as e:
-            logger.error_rank0(f"Error loading shared adapter: {str(e)}")
+            logger.info_rank0(f"Error loading shared adapter: {str(e)}") # error -> info
+            # debugprint(f"Error loading shared adapter: {str(e)}") # 使用英文
             return False
 
     def compute_loss(self, model, inputs, return_outputs=False,num_items_in_batch=None):
         """Compute loss using O-LoRA style loss computation"""
+        # debugprint(f"Entering compute_loss, global_step: {self.state.global_step}") # 使用英文
+        logger.debug(f"Entering compute_loss, global_step: {self.state.global_step}") # 使用 debug 级别
+        
         # Calculate original loss
         outputs = model(**inputs)
         base_loss = outputs.loss
+        # debugprint(f"Original loss (base_loss): {base_loss.item():.4f}") # 使用英文
+        logger.debug(f"Original loss (base_loss): {base_loss.item():.4f}") # 使用 debug 级别
         
         # Calculate orthogonal loss and L2 loss using O-LoRA method
         orthogonal_loss = self.olora.compute_orthogonal_loss()
         l2_loss = self.olora.compute_l2_loss()
+        # debugprint(f"Orthogonal loss (orthogonal_loss): {orthogonal_loss.item():.4f}") # 使用英文
+        logger.debug(f"Orthogonal loss (orthogonal_loss): {orthogonal_loss.item():.4f}") # 使用 debug 级别
+        # debugprint(f"Shared L2 loss (l2_loss): {l2_loss.item():.4f}") # 使用英文
+        logger.debug(f"Shared L2 loss (l2_loss): {l2_loss.item():.4f}") # 使用 debug 级别
         
         # Combine losses
         total_loss = base_loss + orthogonal_loss + l2_loss
+        # debugprint(f"Total loss (total_loss): {total_loss.item():.4f}") # 使用英文
+        logger.debug(f"Total loss (total_loss): {total_loss.item():.4f}") # 使用 debug 级别
         
         # Save current loss values for logging
         self._current_orthogonal_loss = orthogonal_loss.item()
@@ -144,8 +168,8 @@ class ABSCLTrainer(CustomSeq2SeqTrainer):
         
         # Log loss values every 100 steps
         if self.state.global_step % 100 == 0:
-            logger.info_rank0(f"Step {self.state.global_step} losses - Base: {base_loss.item():.4f}, "
-                  f"Orthogonal: {orthogonal_loss.item():.4f}, L2: {l2_loss.item():.4f}")
+            # debugprint(f"Step {self.state.global_step} losses - Base: {base_loss.item():.4f}, Orthogonal: {orthogonal_loss.item():.4f}, L2: {l2_loss.item():.4f}") # 使用英文
+             logger.info_rank0(f"Step {self.state.global_step} losses - Base: {base_loss.item():.4f}, Orthogonal: {orthogonal_loss.item():.4f}, L2: {l2_loss.item():.4f}") # 使用 info_rank0
         
         # Update output metrics
         if return_outputs:

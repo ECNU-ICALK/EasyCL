@@ -5,7 +5,7 @@
     "description": "Registry of supported continual learning methods.",
       "methods": [
       "ewc", "lwf", "replay", "gem", "lamol", "olora", "ilora",
-      "ssr", "abscl", "moe", "cl_moe", "dynamic_conpet"
+      "ssr", "abscl", "moe", "cl_moe", "dynamic_conpet", "pseudo_replay"
     ]
   },
 
@@ -96,6 +96,12 @@
       "needs_prev_data": true,
       "needs_replay_list": true,
       "needs_adapter_name_or_path": false
+    },
+    "pseudo_replay": {
+      "needs_task_id": true,
+      "needs_prev_model": true,
+      "needs_prev_data": true,
+      "needs_adapter_name_or_path": true
     }
   },
   
@@ -124,16 +130,7 @@
     "description": "Defines method-specific parameter mappings related to the previous task's output, overriding defaults if necessary.",
     "ewc": { 
       "params": [
-        {
-          "param_name": "adapter_name_or_path", 
-          "related_to": "output_dir", 
-          "description": "Path to the previous task's adapter for EWC." 
-        },
-        {
-          "param_name": "previous_task_data",
-          "related_to": "dataset",
-           "description": "Path/identifier of previous task data for EWC Fisher calculation."
-        }
+        
       ]
     },
     "lwf": { 
@@ -156,11 +153,7 @@
     },
     "lamol": {
       "params": [
-        {
-          "param_name": "prev_task_dir",
-          "related_to": "output_dir",
-          "description": "Path to the previous task's directory for LaMoL." 
-        }
+        
       ]
     },
     "gem": {
@@ -198,6 +191,11 @@
       ]
     },
     "ssr": {
+      "params": [
+
+      ]
+    },
+    "pseudo_replay": {
       "params": [
 
       ]

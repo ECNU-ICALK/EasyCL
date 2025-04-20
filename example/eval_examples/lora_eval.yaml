@@ -7,8 +7,3 @@ save_dir: saves/cl_eval_results
 # 多适配器评估参数
 eval_mode: single
 cl_tuning_type: lora
-
-# 评估采样参数
-num_beams: 1
-do_sample: false
-max_new_tokens: 32

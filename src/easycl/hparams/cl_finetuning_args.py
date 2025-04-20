@@ -244,6 +244,10 @@ class DynamicConPETArguments(CommonCLFinetuningArguments):
         default=False,
         metadata={"help": "Whether to use Dynamic ConPET method."}
     )
+    classification_loss_weight: float = field(
+        default=1.0,
+        metadata={"help": "Weight coefficient for the dataset classification loss in Dynamic ConPET."}
+    )
 
 @dataclass
 class SSRArguments(CommonCLFinetuningArguments):
@@ -322,10 +326,7 @@ class ILORAArguments:
         metadata={"help": "Layers to compute hidden state consistency loss, -1 means last layer."}
     )
 
-    ilora_buffer_size: int = field(
-        default=500,
-        metadata={"help": "Size of the experience replay buffer specifically for I-LORA method."}
-    )
+
 
 @dataclass
 class ABSCLArguments(CommonCLFinetuningArguments):

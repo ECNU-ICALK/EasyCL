@@ -49,12 +49,5 @@ resume_from_checkpoint: null
 
 # Dynamic ConPET Specific Arguments
 use_dynamic_conpet: true
-# Note: Dynamic ConPET might require specific parameters related to
-# - Task identification/embedding
-# - PET module selection/combination strategy
-# - Management of historical PETs
-# Add these parameters based on the implementation details.
-# Example placeholders:
-# conpet_task_embedding_dim: 64
-# conpet_module_pool_path: path/to/pet/module/pool
-# conpet_selection_strategy: similarity_based # or other strategy 
+adapters_save_path: saves/llama3-8b/lora/dynamic_conpet_sft/adapters # Path to save adapters (shared and task-specific), {task_id} will be replaced
+classification_loss_weight: 10.0

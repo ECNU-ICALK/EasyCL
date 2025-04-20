@@ -4,6 +4,7 @@ import torch
 import gc
 import random
 from typing import TYPE_CHECKING, Optional
+# from debugprint import debugprint
 
 from llamafactory.data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer
 from llamafactory.data.data_utils import merge_dataset
@@ -41,6 +42,9 @@ def run_sft_abscl(
     Run sequence-to-sequence fine-tuning using the ABSCL method.
     This method trains two adapters: a shared adapter and a task-specific adapter.
     """
+    # debugprint("Entering run_sft_abscl function")
+    # debugprint(f"Incoming cl_finetuning_args: {cl_finetuning_args}")
+
     # Load tokenizer and dataset (only need once)
     tokenizer_module = load_tokenizer(model_args)
     tokenizer = tokenizer_module["tokenizer"]
@@ -48,13 +52,15 @@ def run_sft_abscl(
     
     # ============= Prepare training dataset for shared adapter using replay strategy =============
     if training_args.do_train:
-        logger.info("\n" + "*" * 80)
-        logger.info("*" + " " * 78 + "*")
-        logger.info("*" + " " * 25 + "USING REPLAY FOR SHARED ADAPTER" + " " * 25 + "*")
-        logger.info("*" + " " * 78 + "*")
-        logger.info("*" + f" Replay Ratio: {cl_finetuning_args.replay_ratio}" + " " * (77 - len(f" Replay Ratio: {cl_finetuning_args.replay_ratio}")) + "*")
-        logger.info("*" + " " * 78 + "*")
-        logger.info("*" * 80 + "\n")
+        # debugprint("\n" + "*" * 80)
+        # debugprint("*" + " " * 78 + "*")
+        # debugprint("*" + " " * 25 + "Preparing shared adapter dataset using replay strategy" + " " * 25 + "*") # 使用英文
+        # debugprint("*" + " " * 78 + "*")
+        # debugprint("*" + f" Replay Ratio: {cl_finetuning_args.replay_ratio}" + " " * (77 - len(f" Replay Ratio: {cl_finetuning_args.replay_ratio}")) + "*")
+        # debugprint("*" + " " * 78 + "*")
+        # debugprint("*" * 80 + "\n")
+        logger.info_rank0("Preparing shared adapter dataset using replay strategy") # 添加 logger
+        logger.info_rank0(f"Replay Ratio: {cl_finetuning_args.replay_ratio}") # 添加 logger
 
         merged_datasets = []
         replay_datasets_info = []
@@ -73,13 +79,17 @@ def run_sft_abscl(
             
             # Apply sampling to the current dataset, regardless of whether it's the first task
             max_current_samples = int(total_current_samples * cl_finetuning_args.replay_ratio)
+            # debugprint(f"Current task dataset sampling: Total samples {total_current_samples}, Replay ratio {cl_finetuning_args.replay_ratio}, Samples {max_current_samples}") # 使用英文
+            logger.info_rank0(f"Current task dataset sampling: Total samples {total_current_samples}, Replay ratio {cl_finetuning_args.replay_ratio}, Samples {max_current_samples}") # 添加 logger
             if max_current_samples < total_current_samples:
                 current_indices = random.sample(range(total_current_samples), max_current_samples)
                 current_dataset = current_dataset_module["train_dataset"].select(current_indices)
-                logger.info(f"Selected {max_current_samples}/{total_current_samples} samples from current task")
+                # debugprint(f"Selected {max_current_samples}/{total_current_samples} samples from the current task") # 使用英文
+                logger.info_rank0(f"Selected {max_current_samples}/{total_current_samples} samples from the current task") # 添加 logger
             else:
                 current_dataset = current_dataset_module["train_dataset"]
-                logger.info(f"Using all {total_current_samples} samples from current task")
+                # debugprint(f"Using all {total_current_samples} samples from the current task") # 使用英文
+                logger.info_rank0(f"Using all {total_current_samples} samples from the current task") # 添加 logger
             
             merged_datasets.append(current_dataset)
             replay_datasets_info.append({
@@ -94,15 +104,23 @@ def run_sft_abscl(
             original_dataset_dir = copy.deepcopy(data_args.dataset_dir)
             original_dataset = copy.deepcopy(data_args.dataset)
             replay_task_list = [task.strip() for task in cl_finetuning_args.replay_task_list.split(',')]
+            # debugprint(f"Tasks to replay: {replay_task_list}") # 使用英文
+            logger.info_rank0(f"Tasks to replay: {replay_task_list}") # 添加 logger
             maxsamples_list = (
                 [int(x.strip()) for x in cl_finetuning_args.maxsamples_list.split(',')]
                 if cl_finetuning_args.maxsamples_list else None
             )
+            # debugprint(f"Max samples list for replay tasks: {maxsamples_list}") # 使用英文
+            logger.info_rank0(f"Max samples list for replay tasks: {maxsamples_list}") # 添加 logger
             if cl_finetuning_args.previous_task_dataset:
                 data_args.dataset_dir = cl_finetuning_args.previous_task_dataset
+                # debugprint(f"Using previous task dataset directory for replay: {data_args.dataset_dir}") # 使用英文
+                logger.info_rank0(f"Using previous task dataset directory for replay: {data_args.dataset_dir}") # 添加 logger
 
             for task_idx, task_name in enumerate(replay_task_list):
                 data_args.dataset = [task_name]
+                # debugprint(f"Loading replay task: {task_name}") # 使用英文
+                logger.info_rank0(f"Loading replay task: {task_name}") # 添加 logger
                 try:
                     replay_dataset_module = get_dataset(
                         template=template,
@@ -119,6 +137,8 @@ def run_sft_abscl(
                             if maxsamples_list and task_idx < len(maxsamples_list)
                             else int(total_samples * cl_finetuning_args.replay_ratio)
                         )
+                        # debugprint(f"Replay task {task_name}: Total samples {total_samples}, Replay ratio {cl_finetuning_args.replay_ratio}, Max samples {max_samples}") # 使用英文
+                        logger.info_rank0(f"Replay task {task_name}: Total samples {total_samples}, Replay ratio {cl_finetuning_args.replay_ratio}, Max samples {max_samples}") # 添加 logger
                         indices = random.sample(range(total_samples), max_samples)
                         replay_dataset = replay_dataset_module["train_dataset"].select(indices)
                         merged_datasets.append(replay_dataset)
@@ -127,8 +147,11 @@ def run_sft_abscl(
                             "size_original": total_samples,
                             "size_selected": len(replay_dataset)
                         })
+                        # debugprint(f"Task {task_name}: Selected {len(replay_dataset)} samples for replay") # 使用英文
+                        logger.info_rank0(f"Task {task_name}: Selected {len(replay_dataset)} samples for replay") # 添加 logger
                 except Exception as e:
-                    logger.error(f"Failed to load replay task {task_name}: {str(e)}")
+                    logger.info_rank0(f"Failed to load replay task {task_name}: {str(e)}") # error -> info_rank0
+                    # debugprint(f"Failed to load replay task {task_name}: {str(e)}") # 使用英文
                     continue
 
             data_args.dataset_dir = original_dataset_dir
@@ -167,7 +190,8 @@ def run_sft_abscl(
         adapters_save_path = os.path.join(original_output_dir, "adapters")
     
     os.makedirs(adapters_save_path, exist_ok=True)
-    logger.info_rank0(f"Adapters will be saved to: {adapters_save_path}")
+    # debugprint(f"Adapters will be saved to: {adapters_save_path}") # 使用英文
+    logger.info_rank0(f"Adapters will be saved to: {adapters_save_path}") # 添加 logger
 
     # =========================== Train shared adapter ===========================
     adapter_name = "shared_adapter"
@@ -179,7 +203,8 @@ def run_sft_abscl(
     training_args.overwrite_output_dir = True  # Overwrite existing adapter
     
     os.makedirs(training_args.output_dir, exist_ok=True)
-    logger.info_rank0(f"Training shared adapter: {adapter_name}, output directory: {training_args.output_dir}")
+    # debugprint(f"Training shared adapter: {adapter_name}, Output directory: {training_args.output_dir}") # 使用英文
+    logger.info_rank0(f"Training shared adapter: {adapter_name}, Output directory: {training_args.output_dir}") # 添加 logger
     
     # Create model argument copies for shared adapter
     model_args_copy = copy.deepcopy(model_args)
@@ -190,11 +215,13 @@ def run_sft_abscl(
     if os.path.exists(os.path.join(adapter_output_dir, "adapter_config.json")):
         # If a pre-trained shared adapter exists, load it
         model_args_copy.adapter_name_or_path = [adapter_output_dir]
-        logger.info_rank0(f"Loading pretrained shared adapter from: {adapter_output_dir}")
+        # debugprint(f"Loading pre-trained shared adapter: {adapter_output_dir}") # 使用英文
+        logger.info_rank0(f"Loading pre-trained shared adapter: {adapter_output_dir}") # 添加 logger
     else:
         # Otherwise, initialize the shared adapter randomly
         model_args_copy.adapter_name_or_path = None
-        logger.info_rank0(f"No pretrained shared adapter found, initializing a new one")
+        # debugprint(f"Pre-trained shared adapter not found, initializing a new one") # 使用英文
+        logger.info_rank0(f"Pre-trained shared adapter not found, initializing a new one") # 添加 logger
     
     # Load model (with shared adapter, if it exists)
     model = load_model(tokenizer, model_args_copy, finetuning_args_copy, training_args.do_train)
@@ -296,15 +323,19 @@ def run_sft_abscl(
     if not cl_finetuning_args.current_task_id:
         logger.warning_rank0("No current_task_id specified, using 'task' as default task ID")
         task_id = "task"
+        # debugprint("No current_task_id specified, using 'task' as default task ID") # 使用英文
     else:
         task_id = cl_finetuning_args.current_task_id
+        # debugprint(f"Current task ID: {task_id}") # 使用英文
+        logger.info_rank0(f"Current task ID: {task_id}") # 添加 logger
 
     # Reload the original, unsampled dataset for the task-specific adapter
-    logger.info("\n" + "*" * 80)
-    logger.info("*" + " " * 78 + "*")
-    logger.info("*" + " " * 20 + "LOADING ORIGINAL DATASET FOR TASK ADAPTER" + " " * 20 + "*")
-    logger.info("*" + " " * 78 + "*")
-    logger.info("*" * 80 + "\n")
+    # debugprint("\n" + "*" * 80)
+    # debugprint("*" + " " * 78 + "*")
+    # debugprint("*" + " " * 20 + "Loading original dataset for task adapter" + " " * 20 + "*") # 使用英文
+    # debugprint("*" + " " * 78 + "*")
+    # debugprint("*" * 80 + "\n")
+    logger.info_rank0("Loading original dataset for task adapter") # 添加 logger
 
     dataset_module = get_dataset(
         template=template,
@@ -316,7 +347,8 @@ def run_sft_abscl(
     )
     
     if "train_dataset" in dataset_module:
-        logger.info_rank0(f"Using full original dataset with {len(dataset_module['train_dataset'])} samples for task adapter training")
+        # debugprint(f"Using full original dataset with {len(dataset_module['train_dataset'])} samples for task adapter training") # 使用英文
+        logger.info_rank0(f"Using full original dataset with {len(dataset_module['train_dataset'])} samples for task adapter training") # 添加 logger
 
     adapter_name = task_id
     adapter_output_dir = os.path.join(adapters_save_path, adapter_name)
@@ -326,7 +358,8 @@ def run_sft_abscl(
     training_args.output_dir = adapter_output_dir
     
     os.makedirs(training_args.output_dir, exist_ok=True)
-    logger.info_rank0(f"Training task-specific adapter: {adapter_name}, output directory: {training_args.output_dir}")
+    # debugprint(f"Training task-specific adapter: {adapter_name}, Output directory: {training_args.output_dir}") # 使用英文
+    logger.info_rank0(f"Training task-specific adapter: {adapter_name}, Output directory: {training_args.output_dir}") # 添加 logger
     
     # Create model argument copies for task-specific adapter
     model_args_copy = copy.deepcopy(model_args)
@@ -334,26 +367,36 @@ def run_sft_abscl(
     
     # Ensure the shared adapter path exists
     shared_adapter_dir = os.path.join(adapters_save_path, "shared_adapter")
+    # debugprint(f"Checking shared adapter directory: {shared_adapter_dir}") # 使用英文
+    logger.info_rank0(f"Checking shared adapter directory: {shared_adapter_dir}") # 添加 logger
     if not os.path.exists(shared_adapter_dir) or not os.path.exists(os.path.join(shared_adapter_dir, "adapter_config.json")):
         logger.warning_rank0(f"Warning: Shared adapter not found at {shared_adapter_dir}, will proceed but orthogonal loss might not be calculated")
-    
+        # debugprint(f"Warning: Shared adapter not found at {shared_adapter_dir}, will proceed but orthogonal loss might not be calculated") # 使用英文
+
     # Set adapters_save_path in finetuning_args_copy
     finetuning_args_copy.adapters_save_path = adapters_save_path  
+    # debugprint(f"Set adapters_save_path for task adapter: {finetuning_args_copy.adapters_save_path}") # 使用英文
+    logger.info_rank0(f"Set adapters_save_path for task adapter: {finetuning_args_copy.adapters_save_path}") # 添加 logger
     
     # Load only the base model, do not preload any adapters
     model_args_copy.adapter_name_or_path = None
     
-    logger.info_rank0(f"Loading base model and initializing new task-specific adapter: {task_id}")
+    # debugprint(f"Loading base model and initializing new task-specific adapter: {task_id}") # 使用英文
+    logger.info_rank0(f"Loading base model and initializing new task-specific adapter: {task_id}") # 添加 logger
     
     # Load model (randomly initialize task-specific adapter)
     model = load_model(tokenizer, model_args_copy, finetuning_args_copy, training_args.do_train)
-    
+
     # Check and log adapter configuration after creating the model
+    # debugprint("Checking PEFT config after model loading:") # 使用英文
+    logger.info_rank0("Checking PEFT config after model loading:") # 添加 logger
     if hasattr(model, "peft_config"):
-        for adapter_name, config in model.peft_config.items():
-            logger.info_rank0(f"Adapter '{adapter_name}' config: {config}")
+        for adapter_name_cfg, config in model.peft_config.items(): # Rename adapter_name to adapter_name_cfg to avoid conflict
+            # debugprint(f"Adapter '{adapter_name_cfg}' config: {config}") # 使用英文
+            logger.info_rank0(f"Adapter '{adapter_name_cfg}' config: {config}") # 添加 logger
             if hasattr(config, "target_modules"):
-                logger.info_rank0(f"Adapter '{adapter_name}' target modules: {config.target_modules}")
+                # debugprint(f"Adapter '{adapter_name_cfg}' target modules: {config.target_modules}") # 使用英文
+                 logger.info_rank0(f"Adapter '{adapter_name_cfg}' target modules: {config.target_modules}") # 添加 logger
 
     if getattr(model, "is_quantized", False) and not training_args.do_train:
         setattr(model, "_hf_peft_config_loaded", True)  # hack here: make model compatible with prediction
@@ -395,7 +438,7 @@ def run_sft_abscl(
     trainer = ABSCLTrainer(
         model=model,
         args=training_args,
-        cl_finetuning_args=cl_finetuning_args_copy,
+        cl_finetuning_args=cl_finetuning_args, # Use original cl_finetuning_args
         finetuning_args=finetuning_args_copy,
         data_collator=data_collator,
         callbacks=current_callbacks,
@@ -420,20 +463,26 @@ def run_sft_abscl(
         train_result.metrics.update(extra_losses)
         
         # Log ABSCL-related parameters
-        train_result.metrics["orthogonal_lambda"] = cl_finetuning_args_copy.abscl_orthogonal_lambda
-        train_result.metrics["shared_l2_lambda"] = cl_finetuning_args_copy.abscl_shared_l2_lambda
+        train_result.metrics["orthogonal_lambda"] = cl_finetuning_args.abscl_orthogonal_lambda
+        train_result.metrics["shared_l2_lambda"] = cl_finetuning_args.abscl_shared_l2_lambda
         
         # Log used adapter information
         train_result.metrics["shared_adapter"] = os.path.join(adapters_save_path, "shared_adapter")
         train_result.metrics["task_adapter"] = os.path.join(adapters_save_path, adapter_name)
         
         # Log to console
-        logger.info(f"ABSCL Orthogonal Loss: {extra_losses['orthogonal_loss']}")
-        logger.info(f"ABSCL Shared L2 Loss: {extra_losses['shared_l2_loss']}")
-        logger.info(f"ABSCL Orthogonal Lambda: {finetuning_args_copy.abscl_orthogonal_lambda}")
-        logger.info(f"ABSCL Shared L2 Lambda: {finetuning_args_copy.abscl_shared_l2_lambda}")
-        logger.info(f"ABSCL Shared Adapter: {os.path.join(adapters_save_path, 'shared_adapter')}")
-        logger.info(f"ABSCL Task Adapter: {os.path.join(adapters_save_path, adapter_name)}")
+        # debugprint(f"ABSCL Orthogonal Loss: {extra_losses['orthogonal_loss']}") # 使用英文
+        # debugprint(f"ABSCL Shared L2 Loss: {extra_losses['shared_l2_loss']}") # 使用英文
+        # debugprint(f"ABSCL Orthogonal Lambda: {cl_finetuning_args.abscl_orthogonal_lambda}") # 使用英文
+        # debugprint(f"ABSCL Shared L2 Lambda: {cl_finetuning_args.abscl_shared_l2_lambda}") # 使用英文
+        # debugprint(f"ABSCL Shared Adapter: {os.path.join(adapters_save_path, 'shared_adapter')}") # 使用英文
+        # debugprint(f"ABSCL Task Adapter: {os.path.join(adapters_save_path, adapter_name)}") # 使用英文
+        logger.info_rank0(f"ABSCL Orthogonal Loss: {extra_losses['orthogonal_loss']}") # 添加 logger
+        logger.info_rank0(f"ABSCL Shared L2 Loss: {extra_losses['shared_l2_loss']}") # 添加 logger
+        logger.info_rank0(f"ABSCL Orthogonal Lambda: {cl_finetuning_args.abscl_orthogonal_lambda}") # 添加 logger
+        logger.info_rank0(f"ABSCL Shared L2 Lambda: {cl_finetuning_args.abscl_shared_l2_lambda}") # 添加 logger
+        logger.info_rank0(f"ABSCL Shared Adapter: {os.path.join(adapters_save_path, 'shared_adapter')}") # 添加 logger
+        logger.info_rank0(f"ABSCL Task Adapter: {os.path.join(adapters_save_path, adapter_name)}") # 添加 logger
 
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
@@ -442,19 +491,26 @@ def run_sft_abscl(
             plot_loss(training_args.output_dir, keys=["loss", "eval_loss", "eval_accuracy", "orthogonal_loss", "shared_l2_loss"])
 
         # ====================== Add feature extraction and statistics process ======================
-        logger.info("\n" + "*" * 80)
-        logger.info("*" + " " * 78 + "*")
-        logger.info("*" + " " * 25 + "Feature Extraction and Statistics Process" + " " * 24 + "*") # Adjusted spacing
-        logger.info("*" + " " * 78 + "*")
-        logger.info("*" * 80 + "\n")
+        # debugprint("\n" + "*" * 80)
+        # debugprint("*" + " " * 78 + "*")
+        # debugprint("*" + " " * 25 + "Feature extraction and statistics processing" + " " * 24 + "*") # 使用英文
+        # debugprint("*" + " " * 78 + "*")
+        # debugprint("*" * 80 + "\n")
+        logger.info_rank0("Feature extraction and statistics processing") # 添加 logger
         
         # Get statistics save path
-        stats_path = finetuning_args_copy.abscl_stats_path
+        stats_path = cl_finetuning_args.abscl_stats_path # Use original cl_finetuning_args
         if not stats_path:
             stats_path = os.path.join(adapters_save_path, "abscl_stats")
+            # debugprint(f"abscl_stats_path not specified, using default path: {stats_path}") # 使用英文
+            logger.info_rank0(f"abscl_stats_path not specified, using default path: {stats_path}") # 添加 logger
+        else:
+            # debugprint(f"Specified abscl_stats_path: {stats_path}") # 使用英文
+            logger.info_rank0(f"Specified abscl_stats_path: {stats_path}") # 添加 logger
         
         os.makedirs(stats_path, exist_ok=True)
-        logger.info_rank0(f"Feature statistics will be saved to: {stats_path}")
+        # debugprint(f"Feature statistics will be saved to: {stats_path}") # 使用英文
+        logger.info_rank0(f"Feature statistics will be saved to: {stats_path}") # 添加 logger
         
         # Extract task-specific feature statistics
         try:
@@ -462,13 +518,16 @@ def run_sft_abscl(
                 model=model,
                 trainer=trainer,
                 task_id=task_id,
-                stats_path=stats_path,
+                finetuning_args=finetuning_args_copy,
+                cl_finetuning_args=cl_finetuning_args,
                 device=training_args.device,
                 dataset=dataset_module.get("train_dataset")
             )
-            logger.info_rank0(f"Feature statistics process completed, results saved in {stats_path}")
+            # debugprint(f"Feature statistics processing complete, results saved in {stats_path}") # 使用英文
+            logger.info_rank0(f"Feature statistics processing complete, results saved in {stats_path}") # 添加 logger
         except Exception as e:
-            logger.error_rank0(f"Error during feature extraction process: {str(e)}")
+            logger.info_rank0(f"Error during feature extraction process: {str(e)}")
+            # debugprint(f"Error during feature extraction: {str(e)}") # 使用英文
 
     if training_args.predict_with_generate:
         tokenizer.padding_side = "left"  # use left-padding in generation
@@ -498,8 +557,11 @@ def run_sft_abscl(
         torch.cuda.empty_cache()
     
     # Log completion message
-    logger.info_rank0(f"ABSCL training completed. Adapters saved to {adapters_save_path}")
-    logger.info_rank0(f"  - Shared adapter: {os.path.join(adapters_save_path, 'shared_adapter')}")
-    logger.info_rank0(f"  - Task-specific adapter: {os.path.join(adapters_save_path, task_id)}")
+    # debugprint(f"ABSCL training complete. Adapters saved in {adapters_save_path}") # 使用英文
+    # debugprint(f"  - Shared adapter: {os.path.join(adapters_save_path, 'shared_adapter')}") # 使用英文
+    # debugprint(f"  - Task-specific adapter: {os.path.join(adapters_save_path, task_id)}") # 使用英文
+    logger.info_rank0(f"ABSCL training complete. Adapters saved in {adapters_save_path}") # 添加 logger
+    logger.info_rank0(f"  - Shared adapter: {os.path.join(adapters_save_path, 'shared_adapter')}") # 添加 logger
+    logger.info_rank0(f"  - Task-specific adapter: {os.path.join(adapters_save_path, task_id)}") # 添加 logger
     
     return

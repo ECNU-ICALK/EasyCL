@@ -50,3 +50,5 @@ resume_from_checkpoint: null
 # LAMOL Specific Arguments
 use_lamol: true
 lamol_show_gen: false
+lamol_num_samples_per_task: 5
+lamol_samples_dir: lamol_samples_dir

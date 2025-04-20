@@ -22,6 +22,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from torch.utils.data import DataLoader
 from transformers import Trainer
 from peft import PeftModel
+# from debugprint import debugprint
 
 from llamafactory.extras.logging import get_logger
 from easycl.hparams import CLFinetuningArguments
@@ -46,6 +47,8 @@ class ABSCLFeatureExtractor:
         self.stats_path = stats_path
         self.task_id = task_id
         self.device = device or trainer.args.device
+        # debugprint(f"ABSCLFeatureExtractor initialized: task_id={task_id}, stats_path={stats_path}, device={self.device}") # 使用英文
+        logger.info_rank0(f"ABSCLFeatureExtractor initialized: task_id={task_id}, stats_path={stats_path}, device={self.device}") # 添加 logger
         
         # Create statistics directory
         os.makedirs(stats_path, exist_ok=True)
@@ -77,14 +80,17 @@ class ABSCLFeatureExtractor:
         stats_file = os.path.join(self.stats_path, "abscl_stats.pt")
         
         if os.path.exists(stats_file):
-            logger.info_rank0(f"Loading existing statistics: {stats_file}")
+            logger.info_rank0(f"Loading existing statistics: {stats_file}") # 取消注释并使用英文
+            # debugprint(f"Loading existing statistics: {stats_file}") # 使用英文
             stats = torch.load(stats_file)
             
             # Log existing tasks
-            logger.info_rank0(f"Existing task statistics: {list(stats['task_means'].keys())}")
+            logger.info_rank0(f"Existing task statistics: {list(stats['task_means'].keys())}") # 取消注释并使用英文
+            # debugprint(f"Existing task statistics: {list(stats['task_means'].keys())}") # 使用英文
             return stats
         else:
-            logger.info_rank0(f"No existing statistics found, creating new record")
+            logger.info_rank0(f"No existing statistics found, creating new record") # 取消注释并使用英文
+            # debugprint(f"No existing statistics found, creating new record") # 使用英文
             # Initialize statistics
             return {
                 "task_means": {},  # Store feature means for each task
@@ -106,7 +112,8 @@ class ABSCLFeatureExtractor:
         self.model.eval()  # Set to evaluation mode
         features = []
         
-        logger.info_rank0("Starting feature extraction...")
+        logger.info_rank0("Starting feature extraction...") # 取消注释并使用英文
+        # debugprint("Starting feature extraction...") # 使用英文
         
         with torch.no_grad():
             for batch in tqdm(dataloader, desc="Extracting features"):
@@ -138,10 +145,12 @@ class ABSCLFeatureExtractor:
         if features:
             # Concatenate all features
             features = torch.cat(features, dim=0)
-            logger.info_rank0(f"Feature extraction successful, shape: {features.shape}")
+            logger.info_rank0(f"Feature extraction successful, shape: {features.shape}") # 取消注释并使用英文
+            # debugprint(f"Feature extraction successful, shape: {features.shape}") # 使用英文
             return features
         else:
-            logger.error_rank0("Feature extraction failed, returning empty tensor")
+            logger.info_rank0("Feature extraction failed, returning empty tensor") # error -> info
+            # debugprint("Feature extraction failed, returning empty tensor") # 使用英文
             return torch.zeros((0, self.hidden_size))
             
     def _forward_and_get_hidden_states(self, batch: Dict[str, Any]) -> Optional[torch.Tensor]:
@@ -167,10 +176,12 @@ class ABSCLFeatureExtractor:
                 return outputs.hidden_states[-2]
             else:
                 logger.warning_rank0("No hidden states in model outputs")
+                # debugprint("No hidden states in model outputs") # 使用英文
                 return None
                 
         except Exception as e:
-            logger.error_rank0(f"Error during forward pass: {str(e)}")
+            logger.info_rank0(f"Error during forward pass: {str(e)}") # error -> info
+            # debugprint(f"Error during forward pass: {str(e)}") # 使用英文
             return None
 
     def compute_feature_statistics(self, dataset) -> Dict:
@@ -183,6 +194,8 @@ class ABSCLFeatureExtractor:
         Returns:
             stats: Updated feature statistics
         """
+        # debugprint(f"Starting to compute feature statistics for task {self.task_id}") # 使用英文
+        logger.info_rank0(f"Starting to compute feature statistics for task {self.task_id}") # 添加 logger
         # Create data loader
         dataloader = self.trainer.get_train_dataloader()
         if dataset:
@@ -198,7 +211,8 @@ class ABSCLFeatureExtractor:
         features = self._extract_features(dataloader)
         
         if features.shape[0] == 0:
-            logger.error_rank0("Could not extract features, skipping statistics computation")
+            logger.info_rank0("Could not extract features, skipping statistics computation") # error -> info
+            # debugprint("Could not extract features, skipping statistics computation") # 使用英文
             return self.stats
         
         # Calculate feature mean for current task
@@ -233,8 +247,10 @@ class ABSCLFeatureExtractor:
         self.stats["n_samples"] += n_samples
         
         # Log some statistics
-        logger.info_rank0(f"Task {self.task_id} feature mean range: [{torch.min(task_mean).item():.4f}, {torch.max(task_mean).item():.4f}]")
-        logger.info_rank0(f"Sample count: {n_samples}, Total samples: {self.stats['n_samples']}")
+        logger.info_rank0(f"Task {self.task_id} feature mean range: [{torch.min(task_mean).item():.4f}, {torch.max(task_mean).item():.4f}]") # 取消注释并使用英文
+        logger.info_rank0(f"Sample count: {n_samples}, Total samples: {self.stats['n_samples']}") # 取消注释并使用英文
+        # debugprint(f"Task {self.task_id} feature mean range: [{torch.min(task_mean).item():.4f}, {torch.max(task_mean).item():.4f}]") # 使用英文
+        # debugprint(f"Sample count: {n_samples}, Total samples: {self.stats['n_samples']}") # 使用英文
         
         # Save updated statistics
         self.save_stats()
@@ -247,7 +263,8 @@ class ABSCLFeatureExtractor:
         """
         stats_file = os.path.join(self.stats_path, "abscl_stats.pt")
         torch.save(self.stats, stats_file)
-        logger.info_rank0(f"Feature statistics saved to: {stats_file}")
+        logger.info_rank0(f"Feature statistics saved to: {stats_file}") # 取消注释并使用英文
+        # debugprint(f"Feature statistics saved to: {stats_file}") # 使用英文
         
         # Also save some meta information in JSON format for easy viewing
         meta_info = {
@@ -265,7 +282,8 @@ class ABSCLFeatureExtractor:
         with open(meta_file, "w") as f:
             json.dump(meta_info, f, indent=2)
             
-        logger.info_rank0(f"Meta information saved to: {meta_file}")
+        logger.info_rank0(f"Meta information saved to: {meta_file}") # 取消注释并使用英文
+        # debugprint(f"Meta information saved to: {meta_file}") # 使用英文
 
 def extract_feature_statistics(
     model: PeftModel,
@@ -288,16 +306,24 @@ def extract_feature_statistics(
         device: Device
         dataset: Dataset (optional)
     """
+    # debugprint(f"Entering extract_feature_statistics function, task_id: {task_id}") # 使用英文
+    logger.info_rank0(f"Entering extract_feature_statistics function, task_id: {task_id}") # 添加 logger
+    # debugprint(f"Incoming cl_finetuning_args: {cl_finetuning_args}") # 使用英文
+    logger.info_rank0(f"Incoming cl_finetuning_args: {cl_finetuning_args}") # 添加 logger
     if cl_finetuning_args is None:
         logger.warning_rank0("cl_finetuning_args not provided, skipping feature extraction")
+        # debugprint("cl_finetuning_args not provided, skipping feature extraction") # 使用英文
         return
         
     # Get stats path from arguments
     stats_path = cl_finetuning_args.abscl_stats_path or os.path.join(
         os.path.dirname(trainer.args.output_dir), "abscl_stats"
     )
+    # debugprint(f"Statistics path (stats_path): {stats_path}") # 使用英文
+    logger.info_rank0(f"Statistics path (stats_path): {stats_path}") # 添加 logger
     
-    logger.info_rank0(f"Extracting feature statistics for task {task_id}")
+    logger.info_rank0(f"Extracting feature statistics for task {task_id}") # 取消注释并使用英文
+    # debugprint(f"Extracting feature statistics for task {task_id}") # 使用英文
     feature_extractor = ABSCLFeatureExtractor(
         model=model,
         trainer=trainer,
@@ -312,7 +338,8 @@ def extract_feature_statistics(
     # Save statistics
     feature_extractor.save_stats()
     
-    logger.info_rank0(f"Feature statistics extraction completed, saved to {stats_path}")
+    logger.info_rank0(f"Feature statistics extraction completed, saved to {stats_path}") # 取消注释并使用英文
+    # debugprint(f"Feature statistics extraction completed, saved to {stats_path}") # 使用英文
     
     # Clean up to free memory
     del feature_extractor

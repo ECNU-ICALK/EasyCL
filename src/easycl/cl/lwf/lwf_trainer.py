@@ -19,6 +19,7 @@ import json
 import os
 from types import MethodType
 from typing import TYPE_CHECKING, Any, Optional, Union
+from debugprint import debugprint
 
 import numpy as np
 import torch
@@ -61,6 +62,12 @@ class LWFTrainer(Seq2SeqTrainer):
         previous_task_model: Optional[str] = None,
         **kwargs,
     ) -> None:
+        debugprint(f"LWFTrainer __init__ 已调用.")
+        debugprint(f"收到的 cl_finetuning_args: {cl_finetuning_args}")
+        debugprint(f"传入的 use_lwf: {use_lwf}")
+        debugprint(f"传入的 lwf_temperature: {lwf_temperature}")
+        debugprint(f"传入的 lwf_alpha: {lwf_alpha}")
+        debugprint(f"传入的 previous_task_model 路径 (如有): {previous_task_model}")
         # Call parent class initialization first
         if is_transformers_version_greater_than("4.46"):
             kwargs["processing_class"] = kwargs.pop("tokenizer")
@@ -87,6 +94,9 @@ class LWFTrainer(Seq2SeqTrainer):
         if self.use_lwf:
             self.lwf = LWF(self.model, previous_task_model, temperature=lwf_temperature, alpha=lwf_alpha)
             logger.info("LWF has been successfully enabled.")
+            debugprint(f"LWF 对象已在 trainer 中初始化。 LWF 已启用: {self.lwf.enabled}")
+        else:
+            debugprint("LWF 在此 trainer 实例中未使用。")
 
     @override
     def create_optimizer(self) -> "torch.optim.Optimizer":
@@ -143,7 +153,9 @@ class LWFTrainer(Seq2SeqTrainer):
         
         # If LWF is enabled, add LWF loss
         if self.use_lwf:
+            debugprint("LWF 已启用，在 compute_loss 中计算 LWF 损失。")
             lwf_loss = self.lwf.lwf_loss(outputs.logits, inputs)
+            debugprint(f"计算得到的 lwf_loss 值: {lwf_loss}")
             loss += lwf_loss
             
         return (loss, outputs) if return_outputs else loss

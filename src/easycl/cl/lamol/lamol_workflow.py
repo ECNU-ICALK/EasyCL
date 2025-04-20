@@ -104,7 +104,7 @@ def run_sft_lamol(
 
         # --- 3b. Generate Pseudo Samples --- 
         logger.info_rank0("Generating LAMOL pseudo samples...")
-        pseudo_samples = lamol_generator.generate_pseudo_samples(orig_dataset_module["train_dataset"])
+        pseudo_samples = lamol_generator.generate_pseudo_samples()
 
         if not pseudo_samples:
             logger.warning_rank0("No pseudo samples were generated. Training will continue with only the original dataset.")

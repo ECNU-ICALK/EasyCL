@@ -52,3 +52,4 @@ use_ilora: true
 ema_alpha: 0.25
 consistency_weight: 1.0
 save_ema_adapter: true
+ema_adapter_path: saves/llama3-8b/lora/ilora_sft/ema_adapter

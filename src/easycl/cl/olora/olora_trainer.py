@@ -1,17 +1,3 @@
-# Copyright 2024 HuggingFace Inc. and the LlamaFactory team.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import json
 import os
 from types import MethodType
@@ -30,6 +16,8 @@ from llamafactory.train.trainer_utils import create_custom_optimizer, create_cus
 from .olora import OLoRA
 from llamafactory.hparams import FinetuningArguments
 from easycl.hparams import CLFinetuningArguments
+def debugprint(*args, **kwargs):
+    pass
 
 if TYPE_CHECKING:
     from torch.utils.data import Dataset
@@ -64,6 +52,8 @@ class OLoRATrainer(Seq2SeqTrainer):
         self.cl_finetuning_args = cl_finetuning_args
         if gen_kwargs is not None:
             self._gen_kwargs = gen_kwargs
+        
+        debugprint(f"OLoRATrainer __init__: 传入的 cl_finetuning_args: {self.cl_finetuning_args}")
 
         if processor is not None:
             self.add_callback(SaveProcessorCallback(processor))
@@ -77,6 +67,7 @@ class OLoRATrainer(Seq2SeqTrainer):
         # Initialize O-LoRA
         self.use_olora = cl_finetuning_args.use_olora
         if self.use_olora:
+            debugprint(f"OLoRATrainer __init__: O-LoRA 已启用, use_olora={self.use_olora}")
             self.olora = OLoRA(
                 model=self.model,
                 orthogonal_lambda=cl_finetuning_args.orthogonal_lambda,
@@ -88,12 +79,19 @@ class OLoRATrainer(Seq2SeqTrainer):
             )
             # Only try to load when prev_task_id is provided
             if cl_finetuning_args.prev_task_id:
-                if not self.olora.load_prev_adapter(cl_finetuning_args.prev_task_id):
+                debugprint(f"OLoRATrainer __init__: 尝试加载 prev_task_id: {cl_finetuning_args.prev_task_id}")
+                load_success = self.olora.load_prev_adapter(cl_finetuning_args.prev_task_id)
+                debugprint(f"OLoRATrainer __init__: 加载 prev_task_id={cl_finetuning_args.prev_task_id} 的结果: {load_success}")
+                if not load_success:
                     logger.warning("Failed to load previous task adapter.")
                     logger.warning("Training will continue but without orthogonal constraints.")
                     self.use_olora = False
+                    debugprint(f"OLoRATrainer __init__: 加载失败，禁用 O-LoRA, use_olora={self.use_olora}")
             else:
                 logger.info("No previous task ID provided. This seems to be the first task.")
+                debugprint("OLoRATrainer __init__: 没有提供 prev_task_id，视为第一个任务。")
+        else:
+            debugprint(f"OLoRATrainer __init__: O-LoRA 未启用, use_olora={self.use_olora}")
 
     @override
     def create_optimizer(self) -> "torch.optim.Optimizer":
@@ -149,10 +147,24 @@ class OLoRATrainer(Seq2SeqTrainer):
         loss = outputs.loss
 
         # Add O-LoRA losses if enabled
-        if self.use_olora:
-            orthogonal_loss = self.olora.compute_orthogonal_loss()
+        if self.use_olora and hasattr(self, 'olora') and self.olora is not None:
+            orthogonal_loss = torch.tensor(0.0, device=self.args.device) # Initialize to zero
+            l2_loss = torch.tensor(0.0, device=self.args.device)       # Initialize to zero
+
+            # Only compute orthogonal loss if historical weights are loaded
+            if self.olora.merged_historical_weights is not None:
+                orthogonal_loss = self.olora.compute_orthogonal_loss()
+                debugprint(f"OLoRATrainer compute_loss: 计算出的 orthogonal_loss: {orthogonal_loss.item():.4f}")
+            else:
+                 debugprint(f"OLoRATrainer compute_loss: 未加载历史权重，跳过 orthogonal_loss 计算。")
+
+            # Compute L2 loss for the current adapter parameters
             l2_loss = self.olora.compute_l2_loss()
+            debugprint(f"OLoRATrainer compute_loss: 计算出的 l2_loss: {l2_loss.item():.4f}")
+
+            # Add computed losses to the main task loss
             loss = loss + orthogonal_loss + l2_loss
+            debugprint(f"OLoRATrainer compute_loss: 添加 O-LoRA 损失后的总 loss: {loss.item():.4f}")
             
             if return_outputs:
                 outputs.metrics = outputs.get("metrics", {})
@@ -160,6 +172,8 @@ class OLoRATrainer(Seq2SeqTrainer):
                     "orthogonal_loss": orthogonal_loss.item(),
                     "l2_loss": l2_loss.item()
                 })
+        else:
+            debugprint(f"OLoRATrainer compute_loss: O-LoRA 未启用或未初始化，跳过 O-LoRA 损失计算。")
 
         return (loss, outputs) if return_outputs else loss
 

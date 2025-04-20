@@ -4,6 +4,7 @@ from typing import Optional, Dict
 from llamafactory.extras.logging import get_logger
 from easycl.hparams import CLFinetuningArguments
 import traceback
+from debugprint import debugprint
 
 logger = get_logger(__name__)
 
@@ -14,17 +15,25 @@ class LWF:
         self.temperature = temperature
         self.alpha = alpha
         self.enabled = True  # LWF status flag
+        debugprint(f"LWF __init__ 已调用.")
+        debugprint(f"收到的 temperature: {temperature}")
+        debugprint(f"收到的 alpha: {alpha}")
         
         if previous_task_model is not None:
             self.previous_task_model = previous_task_model
+            debugprint(f"已提供并分配先前任务模型.")
         else:
             self.previous_task_model = None
             logger.warning("No previous task model provided. LWF will be disabled.")
             self.enabled = False
+            debugprint(f"未提供先前任务模型。LWF 已禁用.")
+        debugprint(f"LWF 初始化完成。已启用: {self.enabled}")
 
     def lwf_loss(self, logits: torch.Tensor, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Calculate LWF loss"""
+        debugprint(f"LWF lwf_loss 已调用。LWF 启用状态: {self.enabled}, 温度: {self.temperature}, Alpha: {self.alpha}, 先前模型是否存在: {self.previous_task_model is not None}")
         if not self.enabled or self.previous_task_model is None:
+            debugprint("LWF 已禁用或无先前模型，返回零损失。")
             return torch.tensor(0.0, device=logits.device)
         
         try:
@@ -87,6 +96,7 @@ class LWF:
             # Combine losses
             total_loss = (1 - self.alpha) * ce_loss + self.alpha * distillation_loss
             
+            debugprint(f"计算得到的 LWF total_loss: {total_loss}")
             return total_loss
             
         except Exception as e:

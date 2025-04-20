@@ -112,7 +112,7 @@ def run_sft_pseudo_replay(
     
     # Generate pseudo samples using PseudoReplay method
     logger.info_rank0("Starting pseudo sample generation...")
-    pseudo_samples = pseudo_replay.generate_pseudo_samples(orig_dataset_module["train_dataset"])
+    pseudo_samples = pseudo_replay.generate_pseudo_samples()
     
     # Save pseudo samples
     logger.info_rank0("Saving pseudo samples...")
@@ -297,11 +297,6 @@ def run_regular_training(
                 dataset_module["train_dataset"], train_result.metrics, stage="sft"
             )
             
-        # Log pseudo-replay parameters
-        train_result.metrics["num_pseudo_samples"] = num_pseudo_samples
-        train_result.metrics["pseudo_lambda"] = cl_finetuning_args.pseudo_lambda
-        train_result.metrics["pseudo_loss_type"] = cl_finetuning_args.pseudo_loss_type
-
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
         trainer.save_state()

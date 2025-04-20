@@ -18,6 +18,14 @@ from llamafactory.model import load_model, load_tokenizer
 
 logger = logging.getLogger(__name__)
 
+# Add debugprint placeholder if not already present or defined elsewhere
+# This avoids NameError if debugprint is used later
+try:
+    debugprint
+except NameError:
+    def debugprint(*args, **kwargs):
+        pass
+
 class LAMOLGenerator:
     """
     LAMOL (pseudo-replay style) generator.
@@ -48,7 +56,86 @@ class LAMOLGenerator:
         self.previous_task_model_path = cl_finetuning_args.previous_task_model # Reuse existing param
 
         if not self.current_task_id:
-            logger.warning_rank0("`current_task_id` not provided for LAMOL, saving might be inconsistent.")
+            logger.warning("`current_task_id` not provided for LAMOL, saving might be inconsistent.")
+
+        # Load dataset_info.json
+        self.dataset_info = self._load_dataset_info()
+
+    def _load_dataset_info(self) -> Optional[Dict]:
+        """Loads dataset_info.json from specified directory or fallback."""
+        info_path = None
+        primary_path = os.path.join(self.data_args.dataset_dir, "dataset_info.json")
+        fallback_path = os.path.join("./data", "dataset_info.json")
+
+        if os.path.exists(primary_path):
+            info_path = primary_path
+        elif os.path.exists(fallback_path) and os.path.abspath(self.data_args.dataset_dir) != os.path.abspath("./data"):
+             info_path = fallback_path
+             logger.info(f"dataset_info.json not found in {self.data_args.dataset_dir}, using fallback ./data/dataset_info.json")
+        else:
+            logger.warning(f"dataset_info.json not found in {self.data_args.dataset_dir} or ./data. Cannot find raw dataset files for few-shot.")
+            return None
+
+        try:
+            with open(info_path, 'r', encoding='utf-8') as f:
+                logger.info(f"Loading dataset info from: {info_path}")
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load dataset_info.json from {info_path}: {e}")
+            return None
+
+    def _find_data_file(self, dataset_name: str, split_type: str = "train") -> Optional[str]:
+            """
+            Finds the data file path for a given dataset name and split using dataset_info.json.
+            Follows logic described in finddataset.md.
+            Returns the absolute path to the file, or None if not found.
+            """
+            if not self.dataset_info:
+                logger.warning("dataset_info.json was not loaded. Cannot find data file.")
+                return None
+
+            found_entry = None
+            high_priority_key = f"{dataset_name}_{split_type}"
+            low_priority_key = dataset_name
+
+            # 1. High-priority check: Exact match f"{dataset_name}_{split_type}"
+            if high_priority_key in self.dataset_info:
+                entry = self.dataset_info[high_priority_key]
+                if isinstance(entry, dict) and "file_name" in entry:
+                    found_entry = entry
+                    logger.debug(f"Found high-priority match for {dataset_name} ({split_type}): {high_priority_key}")
+
+            # 2. Low-priority check: Match dataset_name and check "split" field
+            if not found_entry and low_priority_key in self.dataset_info:
+                entry = self.dataset_info[low_priority_key]
+                if isinstance(entry, dict) and "file_name" in entry and entry.get("split") == split_type:
+                    found_entry = entry
+                    logger.debug(f"Found low-priority match for {dataset_name} ({split_type}): {low_priority_key} with matching split")
+
+            if not found_entry:
+                 logger.warning(f"Could not find entry with 'file_name' for {dataset_name} (split: {split_type}) in dataset_info.json.")
+                 return None
+
+            file_name = found_entry["file_name"]
+
+            # 3. Construct and validate path
+            potential_paths = []
+            # Path relative to dataset_dir
+            potential_paths.append(os.path.join(self.data_args.dataset_dir, file_name))
+            # Fallback path relative to ./data (if different from dataset_dir)
+            data_dir_abs = os.path.abspath("./data")
+            dataset_dir_abs = os.path.abspath(self.data_args.dataset_dir)
+            if data_dir_abs != dataset_dir_abs:
+                potential_paths.append(os.path.join("./data", file_name))
+
+            for path in potential_paths:
+                abs_path = os.path.abspath(path)
+                if os.path.exists(abs_path):
+                    logger.info(f"Found data file for {dataset_name} ({split_type}): {abs_path}")
+                    return abs_path
+
+            logger.warning(f"File '{file_name}' for {dataset_name} ({split_type}) not found in {self.data_args.dataset_dir} or ./data.")
+            return None
 
     def setup_previous_model(self) -> Tuple[Optional[AutoModelForCausalLM], Optional[AutoTokenizer]]:
         """
@@ -56,7 +143,7 @@ class LAMOLGenerator:
         Uses finetuning_args.previous_task_model path.
         """
         if not self.previous_task_model_path:
-            logger.warning_rank0("`previous_task_model` path not provided. Skipping LAMOL pseudo sample generation.")
+            logger.warning("`previous_task_model` path not provided. Skipping LAMOL pseudo sample generation.")
             return None, None
 
         prev_model_args = copy.deepcopy(self.model_args)
@@ -67,22 +154,22 @@ class LAMOLGenerator:
 
         # Determine how to load the previous model based on finetuning type
         if temp_finetuning_args.finetuning_type == "lora":
-            logger.info_rank0(f"Loading previous task LoRA adapter from: {model_path_to_load}")
+            logger.info(f"Loading previous task LoRA adapter from: {model_path_to_load}")
             # Keep the original base model path, just change the adapter
             adapter_path_to_load = [model_path_to_load]
-            prev_model_args.adapter_name_or_path = adapter_path_to_load 
+            prev_model_args.adapter_name_or_path = adapter_path_to_load
             # Important: Don't create a new adapter when loading for generation
             temp_finetuning_args.create_new_adapter = False
             # Use the base model path from the original model_args for LoRA
             model_identity = f"{prev_model_args.model_name_or_path} with adapter {model_path_to_load}"
         elif temp_finetuning_args.finetuning_type == "full":
-            logger.info_rank0(f"Loading previous task full model from: {model_path_to_load}")
+            logger.info(f"Loading previous task full model from: {model_path_to_load}")
             # Load the full model from the specified path
             prev_model_args.model_name_or_path = model_path_to_load
             prev_model_args.adapter_name_or_path = None # Ensure no adapters are loaded
             model_identity = model_path_to_load
         else: # freeze tuning behaves like full tuning for loading previous state
-             logger.info_rank0(f"Loading previous task model (freeze/full) from: {model_path_to_load}")
+             logger.info(f"Loading previous task model (freeze/full) from: {model_path_to_load}")
              prev_model_args.model_name_or_path = model_path_to_load
              prev_model_args.adapter_name_or_path = None
              model_identity = model_path_to_load
@@ -107,19 +194,58 @@ class LAMOLGenerator:
              logger.error(f"Failed to load previous model ({model_identity}): {e}")
              return None, None
 
-        logger.info_rank0(f"Loaded previous task model for LAMOL generation: {model_identity}")
+        logger.info(f"Loaded previous task model for LAMOL generation: {model_identity}")
         return prev_model, tokenizer
 
-    def get_few_shot_example(self, dataset):
+    def get_few_shot_example(self) -> Optional[Dict]:
         """
-        Get a single random example from the dataset for 1-shot prompting.
+        Get a single random example from the *raw* dataset file for 1-shot prompting.
+        Uses dataset_info.json to find the file path based on data_args.dataset.
+        Reads the file (JSON or JSONL) and returns a random example.
         """
-        if not dataset or len(dataset) == 0:
-             logger.warning_rank0("Dataset is empty, cannot get few-shot example.")
-             return None
+        # Determine the dataset name (likely the current task's dataset)
+        dataset_name = None
+        if isinstance(self.data_args.dataset, list) and self.data_args.dataset:
+            dataset_name = self.data_args.dataset[0] # Use the first dataset if it's a list
+        elif isinstance(self.data_args.dataset, str):
+             dataset_name = self.data_args.dataset
+        else:
+            logger.warning("Could not determine dataset name from data_args.dataset.")
+            return None
 
-        index = random.randint(0, len(dataset) - 1)
-        return dataset[index]
+        if not dataset_name:
+            logger.warning("Dataset name is empty. Cannot get few-shot example.")
+            return None
+
+        # Find the raw data file path (assuming we use the 'train' split for few-shot)
+        file_path = self._find_data_file(dataset_name, split_type="train")
+
+        if not file_path:
+            logger.warning(f"Could not find raw data file for dataset '{dataset_name}'. Cannot get few-shot example.")
+            return None
+
+        # Read the file content
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                if file_path.endswith(".json"):
+                    data = json.load(f)
+                elif file_path.endswith(".jsonl"):
+                    data = [json.loads(line) for line in f if line.strip()]
+                else:
+                    logger.warning(f"Unsupported file format for few-shot example: {file_path}. Only .json and .jsonl are supported.")
+                    return None
+
+            if not data or not isinstance(data, list) or len(data) == 0:
+                 logger.warning(f"Raw dataset file '{file_path}' is empty or not a list. Cannot get few-shot example.")
+                 return None
+
+            # Select and return a random example
+            index = random.randint(0, len(data) - 1)
+            return data[index]
+
+        except Exception as e:
+            logger.warning(f"Error reading or parsing raw dataset file '{file_path}': {e}")
+            return None
 
     def construct_prompt(self, example):
         """
@@ -127,7 +253,7 @@ class LAMOLGenerator:
         Expected format: "{instruction}\n\nInstruction:"
         """
         if not example:
-            logger.warning_rank0("Cannot construct prompt from empty example.")
+            logger.warning("Cannot construct prompt from empty example.")
             return None
 
         instruction_text = ""
@@ -152,25 +278,24 @@ class LAMOLGenerator:
                      break
 
         if not instruction_text:
-            logger.warning_rank0(f"Could not extract instruction from example: {example}")
+            logger.warning(f"Could not extract instruction from example: {example}")
             return None
 
         # Format the prompt
         prompt = f"{instruction_text}\n\nInstruction:"
         return prompt
 
-    def generate_pseudo_samples(self, dataset):
+    def generate_pseudo_samples(self):
         """
-        Generate pseudo samples using the *previous task's model* and 1-shot instruction prompts from the current task's data.
+        Generate pseudo samples using the *previous task's model* and 1-shot instruction prompts from the current task's data (read from raw file).
         """
         num_samples = self.lamol_num_samples_per_task
-        if not dataset or len(dataset) == 0:
-            logger.warning_rank0("Input dataset is empty. Skipping pseudo sample generation.")
-            return []
+        # Input dataset object is no longer needed here
 
         # Load the PREVIOUS task's model
         prev_model, tokenizer = self.setup_previous_model()
-
+        prev_model = prev_model.cuda()
+        tokenizer.padding_side = "left"
         # If loading failed, return empty list
         if prev_model is None or tokenizer is None:
              return []
@@ -178,29 +303,32 @@ class LAMOLGenerator:
         # Set up generation config
         generation_config = GenerationConfig(
             temperature=self.lamol_generation_temperature,
-            do_sample=True, # Important for diversity
+            top_p=0.95,
+            top_k=40,
+            num_beams=1,
+            do_sample=True,
             pad_token_id=tokenizer.pad_token_id,
-            eos_token_id=tokenizer.eos_token_id,
+            eos_token_id=tokenizer.eos_token_id,    
             max_new_tokens=128 # Limit generated length
         )
 
         generated_texts = []
-        logger.info_rank0(f"Starting generation of {num_samples} LAMOL pseudo samples using previous task model...")
+        logger.info(f"Starting generation of {num_samples} LAMOL pseudo samples using previous task model...")
 
         # Simplified generation loop
         for i in range(num_samples):
             if (i + 1) % 50 == 0:
-                logger.info_rank0(f"Generated {i+1}/{num_samples} samples...")
+                logger.info(f"Generated {i+1}/{num_samples} samples...")
 
-            # Get a new 1-shot example for each generation from the CURRENT task's data
-            few_shot_example = self.get_few_shot_example(dataset)
+            # Get a new 1-shot example for each generation from the CURRENT task's RAW data
+            few_shot_example = self.get_few_shot_example()
             if not few_shot_example:
-                logger.warning_rank0("Failed to get few-shot example, stopping generation.")
+                logger.warning("Failed to get few-shot example, stopping generation.")
                 break
 
             prompt = self.construct_prompt(few_shot_example)
             if not prompt:
-                logger.warning_rank0("Failed to construct prompt, skipping this sample.")
+                logger.warning("Failed to construct prompt, skipping this sample.")
                 continue
 
             inputs = tokenizer(prompt, return_tensors="pt")
@@ -229,16 +357,20 @@ class LAMOLGenerator:
                     })
 
             except Exception as e:
-                logger.warning_rank0(f"Error during generation for sample {i+1}: {e}")
+                logger.warning(f"Error during generation for sample {i+1}: {e}")
                 continue
 
         # Release GPU memory
         del prev_model
+        del tokenizer
+        del inputs
+        del input_ids
+        del attention_mask
         torch.cuda.empty_cache()
 
         pseudo_samples = self.parse_generated_texts(generated_texts)
 
-        logger.info_rank0(f"Successfully generated {len(pseudo_samples)} valid LAMOL pseudo samples using previous task model.")
+        logger.info(f"Successfully generated {len(pseudo_samples)} valid LAMOL pseudo samples using previous task model.")
         return pseudo_samples
 
     def parse_generated_texts(self, generated_data: List[Dict[str, str]]):
@@ -271,7 +403,7 @@ class LAMOLGenerator:
                 seen.add(sample_str)
                 unique_samples.append(sample)
 
-        logger.info_rank0(f"Parsed {len(generated_data)} generated texts into {len(unique_samples)} unique LAMOL samples.")
+        logger.info(f"Parsed {len(generated_data)} generated texts into {len(unique_samples)} unique LAMOL samples.")
         return unique_samples
 
     def save_pseudo_samples(self, samples):
@@ -312,8 +444,8 @@ class LAMOLGenerator:
         with open(dataset_info_path, 'w', encoding='utf-8') as f:
             json.dump(dataset_info, f, ensure_ascii=False, indent=2)
 
-        logger.info_rank0(f"Saved {len(all_samples)} LAMOL pseudo samples for task {self.current_task_id} to {pseudo_file_path}")
-        logger.info_rank0(f"Created dataset info at {dataset_info_path}")
+        logger.info(f"Saved {len(all_samples)} LAMOL pseudo samples for task {self.current_task_id} to {pseudo_file_path}")
+        logger.info(f"Created dataset info at {dataset_info_path}")
 
         return task_dir
 
@@ -323,38 +455,51 @@ class LAMOLGenerator:
         Defaults to Alpaca format if information cannot be retrieved.
         """
         try:
+            # Use a more robust way to import if needed, or handle potential structure changes
             from llamafactory.data.parser import _parse_dataset_info
 
             dataset_name = None
+            # Handle both list and string cases for dataset name
             if isinstance(self.data_args.dataset, list) and self.data_args.dataset:
                 dataset_name = self.data_args.dataset[0]
             elif isinstance(self.data_args.dataset, str):
                  dataset_name = self.data_args.dataset
 
             if not dataset_name:
-                 logger.warning_rank0("No dataset specified in data_args, defaulting format to Alpaca.")
+                 logger.warning("No dataset specified in data_args, defaulting format to Alpaca.")
                  return {"formatting": "alpaca", "split": "train"}
 
-            dataset_info_path = os.path.join(self.data_args.dataset_dir, "dataset_info.json")
-            if os.path.exists(dataset_info_path):
-                 with open(dataset_info_path, 'r', encoding='utf-8') as f:
-                      all_dataset_info = json.load(f)
-                      if dataset_name in all_dataset_info:
-                           src_info = _parse_dataset_info(all_dataset_info[dataset_name])
-                           format_info = {"formatting": src_info.get("formatting", "alpaca")}
-                           if "split" in src_info: format_info["split"] = src_info["split"]
-                           if "columns" in src_info: format_info["columns"] = src_info["columns"]
-                           if "tags" in src_info: format_info["tags"] = src_info["tags"]
-                           logger.info_rank0(f"Using dataset format from {dataset_name}: {format_info}")
-                           return format_info
-                      else:
-                           logger.warning_rank0(f"Dataset '{dataset_name}' not found in dataset_info.json, defaulting format.")
+            # Use the pre-loaded dataset_info if available
+            if self.dataset_info:
+                  all_dataset_info = self.dataset_info
+                  if dataset_name in all_dataset_info:
+                       src_info = _parse_dataset_info(all_dataset_info[dataset_name])
+                       format_info = {"formatting": src_info.get("formatting", "alpaca")}
+                       # Copy relevant fields if they exist
+                       if "split" in src_info: format_info["split"] = src_info["split"]
+                       if "columns" in src_info: format_info["columns"] = src_info["columns"]
+                       if "tags" in src_info: format_info["tags"] = src_info["tags"]
+                       logger.info(f"Using dataset format from {dataset_name} (via pre-loaded info): {format_info}")
+                       return format_info
+                  # Try matching without split suffix if main key fails
+                  elif f"{dataset_name}_train" in all_dataset_info:
+                      src_info = _parse_dataset_info(all_dataset_info[f"{dataset_name}_train"])
+                      format_info = {"formatting": src_info.get("formatting", "alpaca")}
+                      if "split" in src_info: format_info["split"] = src_info["split"]
+                      if "columns" in src_info: format_info["columns"] = src_info["columns"]
+                      if "tags" in src_info: format_info["tags"] = src_info["tags"]
+                      logger.info(f"Using dataset format from {dataset_name}_train (via pre-loaded info): {format_info}")
+                      return format_info
+                  else:
+                       logger.warning(f"Dataset '{dataset_name}' not found in pre-loaded dataset_info.json, defaulting format.")
             else:
-                 logger.warning_rank0(f"dataset_info.json not found in {self.data_args.dataset_dir}, defaulting format.")
+                 logger.warning("Pre-loaded dataset_info is None, cannot determine format from it. Defaulting format.")
+
 
         except ImportError:
-            logger.warning_rank0("Could not import data parsing functions, defaulting format to Alpaca.")
+            logger.warning("Could not import _parse_dataset_info from llamafactory.data.parser, defaulting format to Alpaca.")
         except Exception as e:
-            logger.warning_rank0(f"Error retrieving dataset format: {e}. Defaulting format to Alpaca.")
+            logger.warning(f"Error retrieving dataset format: {e}. Defaulting format to Alpaca.")
 
+        # Default format if retrieval fails
         return {"formatting": "alpaca", "split": "train"}

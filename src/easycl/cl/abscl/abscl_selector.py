@@ -22,6 +22,7 @@ from tqdm import tqdm
 from transformers import Trainer, Seq2SeqTrainer, PreTrainedModel, TrainingArguments, BatchEncoding
 from torch.utils.data import DataLoader, Dataset
 import copy
+# from debugprint import debugprint
 
 from easycl.cl.abscl.abscl import ABSCLFeatureExtractor
 from llamafactory.extras.logging import get_logger
@@ -63,7 +64,7 @@ def find_adapters_in_dir(base_dir: str) -> Dict[str, str]:
     adapters_map = {}
     
     if not os.path.exists(base_dir):
-        logger.warning(f"Adapter目录不存在: {base_dir}")
+        logger.warning(f"Adapter directory does not exist: {base_dir}")
         return adapters_map
         
     # 扫描子目录，查找有效的Adapter目录
@@ -79,12 +80,12 @@ def find_adapters_in_dir(base_dir: str) -> Dict[str, str]:
                     config = json.load(f)
                 task_id = config.get("task_id", item)  # 如果配置中没有task_id，则使用目录名
             except Exception as e:
-                logger.warning(f"读取Adapter配置失败: {adapter_config_path}, 错误: {str(e)}")
+                logger.warning(f"Failed to read adapter config: {adapter_config_path}, error: {str(e)}")
                 task_id = item  # 默认使用目录名作为任务ID
                 
             # 记录任务ID到相对路径的映射
             adapters_map[task_id] = item
-            logger.info(f"发现Adapter: {task_id} -> {item}")
+            logger.info(f"Found adapter: {task_id} -> {item}")
     
     return adapters_map
 
@@ -157,34 +158,37 @@ def select_adapter(
         device: 计算设备
         batch_size: 批处理大小
     """
+    # debugprint(f"Entering select_adapter function")
+    # debugprint(f"Incoming finetuning_args: {finetuning_args}")
+
     # 确保输出目录存在
     os.makedirs(multi_adapter_dir, exist_ok=True)
     output_config_path = os.path.join(multi_adapter_dir, "multiadapter_selected_config.json")
     
-    logger.info(f"开始进行ABSCL Adapter选择，输出配置将保存到: {output_config_path}")
+    logger.info(f"Starting ABSCL adapter selection, output config will be saved to: {output_config_path}")
     
     # 1. 加载统计信息(均值、协方差)
     stats_path = multi_adapter_dir
     stats_file = os.path.join(stats_path, "abscl_stats.pt")
     
     if not os.path.exists(stats_file):
-        raise ValueError(f"未找到ABSCL统计文件: {stats_file}")
+        raise ValueError(f"ABSCL statistics file not found: {stats_file}")
         
-    logger.info(f"加载ABSCL特征统计信息: {stats_file}")
+    logger.info(f"Loading ABSCL feature statistics: {stats_file}")
     stats = torch.load(stats_file)
     
     # 获取所有任务的均值和共享协方差矩阵的逆
     task_means = stats["task_means"]
     if not task_means:
-        raise ValueError("统计信息中没有任务均值数据")
+        raise ValueError("No task mean data in statistics")
         
     cov_matrix = stats["cov_matrix"]
     if cov_matrix is None:
-        raise ValueError("统计信息中没有协方差矩阵")
+        raise ValueError("No covariance matrix in statistics")
         
     # 计算协方差矩阵的逆
     # 添加小的正则化项，确保矩阵可逆
-    logger.info("计算协方差矩阵的逆...")
+    logger.info("Calculating inverse of covariance matrix...")
     cov_matrix_np = cov_matrix.numpy()
     # 添加小的正则化项到对角线
     epsilon = 1e-5
@@ -194,7 +198,7 @@ def select_adapter(
         cov_inv_np = np.linalg.inv(cov_matrix_np)
         cov_inv = torch.tensor(cov_inv_np, dtype=torch.float32)
     except np.linalg.LinAlgError:
-        logger.warning("协方差矩阵不可逆，尝试使用伪逆")
+        logger.warning("Covariance matrix is not invertible, using pseudo-inverse")
         cov_inv_np = np.linalg.pinv(cov_matrix_np)
         cov_inv = torch.tensor(cov_inv_np, dtype=torch.float32)
     
@@ -203,7 +207,7 @@ def select_adapter(
     finetuning_args_base = copy.deepcopy(finetuning_args)
     finetuning_args_base.adapter_name_or_path = None
     
-    logger.info("加载基础模型（无Adapter）用于特征提取...")
+    logger.info("Loading base model (no adapter) for feature extraction...")
     from llamafactory.model import load_model, load_tokenizer
     
     # 加载分词器
@@ -217,7 +221,7 @@ def select_adapter(
     model.eval()
     
     # 3. 准备特征提取器
-    logger.info("初始化特征提取器...")
+    logger.info("Initializing feature extractor...")
     # 创建一个简单的Trainer对象，用于特征提取器
     dummy_training_args = TrainingArguments(
         output_dir=multi_adapter_dir,
@@ -238,16 +242,16 @@ def select_adapter(
     )
     
     # 4. 扫描可用的Adapter
-    logger.info(f"扫描可用Adapter: {multi_adapter_dir}")
+    logger.info(f"Scanning for available adapters: {multi_adapter_dir}")
     task_to_adapter = find_adapters_in_dir(multi_adapter_dir)
     
     if not task_to_adapter:
-        raise ValueError(f"在{multi_adapter_dir}中未找到可用的Adapter")
+        raise ValueError(f"No available adapters found in {multi_adapter_dir}")
         
-    logger.info(f"找到{len(task_to_adapter)}个可用Adapter: {list(task_to_adapter.keys())}")
+    logger.info(f"Found {len(task_to_adapter)} available adapters: {list(task_to_adapter.keys())}")
     
     # 5. 加载测试数据集
-    logger.info(f"加载测试数据集: {dataset_path}")
+    logger.info(f"Loading test dataset: {dataset_path}")
     try:
         with open(dataset_path, "r", encoding="utf-8") as f:
             dataset = json.load(f)
@@ -259,12 +263,12 @@ def select_adapter(
             else:
                 samples = [dataset]  # 单个样本
     except Exception as e:
-        raise ValueError(f"加载数据集失败: {str(e)}")
+        raise ValueError(f"Failed to load dataset: {str(e)}")
     
-    logger.info(f"测试集包含{len(samples)}个样本")
+    logger.info(f"Test set contains {len(samples)} samples")
     
     # 6. 为每个样本选择最佳Adapter
-    logger.info("开始为每个样本选择最佳Adapter...")
+    logger.info("Starting to select the best adapter for each sample...")
     adapter_assignments = defaultdict(lambda: {"path": None, "indices": []})
     
     # 将样本分批处理，提高效率
@@ -281,7 +285,7 @@ def select_adapter(
     task_means = {k: v.to(device) for k, v in task_means.items()}
     
     sample_idx = 0
-    for batch in tqdm(dataloader, desc="处理样本批次", disable=False):
+    for batch in tqdm(dataloader, desc="Processing sample batches", disable=False):
         # 将batch移至设备
         batch = {k: v.to(device) for k, v in batch.items()}
         
@@ -290,7 +294,7 @@ def select_adapter(
             hidden_states = extractor._forward_and_get_hidden_states(batch)
             
             if hidden_states is None:
-                logger.warning(f"批次{sample_idx//batch_size}无法提取特征，使用默认Adapter")
+                logger.warning(f"Batch {sample_idx//batch_size} could not extract features, using default adapter")
                 # 对批次中的每个样本使用默认Adapter（第一个可用的）
                 default_task_id = list(task_to_adapter.keys())[0]
                 default_adapter_path = task_to_adapter[default_task_id]
@@ -347,7 +351,7 @@ def select_adapter(
                 # 如果没有找到最佳任务，使用第一个可用的
                 if best_task_id is None:
                     best_task_id = list(task_to_adapter.keys())[0]
-                    logger.warning(f"样本{sample_idx}无法找到最佳任务，使用默认任务: {best_task_id}")
+                    logger.warning(f"Sample {sample_idx} could not find the best task, using default task: {best_task_id}")
                     
                 # 记录样本到任务的分配
                 adapter_path = task_to_adapter[best_task_id]
@@ -357,7 +361,7 @@ def select_adapter(
                 sample_idx += 1
     
     # 7. 生成配置文件
-    logger.info("生成Adapter选择配置文件...")
+    logger.info("Generating adapter selection configuration file...")
     output_config = {
         "task_name": task_name,
         "adapters": dict(adapter_assignments)
@@ -366,16 +370,17 @@ def select_adapter(
     with open(output_config_path, "w", encoding="utf-8") as f:
         json.dump(output_config, f, indent=2, ensure_ascii=False)
         
-    logger.info(f"Adapter选择配置已保存到: {output_config_path}")
+    logger.info(f"Adapter selection configuration saved to: {output_config_path}")
     
     # 打印统计信息
     for task_id, data in adapter_assignments.items():
-        logger.info(f"任务 {task_id}: 分配了 {len(data['indices'])} 个样本")
+        logger.info(f"Task {task_id}: assigned {len(data['indices'])} samples")
     
     # 释放资源
     del model
     del extractor
     torch.cuda.empty_cache()
+    # debugprint("select_adapter function finished")
 
 def main():
     """
@@ -384,13 +389,14 @@ def main():
     import argparse
     from llamafactory.hparams import get_eval_args
     
-    parser = argparse.ArgumentParser(description="ABSCL Adapter选择器")
-    parser.add_argument("--config-file", type=str, required=True, help="配置文件路径")
-    parser.add_argument("--dataset-path", type=str, required=True, help="测试数据集路径")
-    parser.add_argument("--multi-adapter-dir", type=str, help="多Adapter目录，可覆盖配置文件中的设置")
-    parser.add_argument("--batch-size", type=int, default=16, help="特征提取批处理大小")
+    parser = argparse.ArgumentParser(description="ABSCL Adapter Selector")
+    parser.add_argument("--config-file", type=str, required=True, help="Configuration file path")
+    parser.add_argument("--dataset-path", type=str, required=True, help="Test dataset path")
+    parser.add_argument("--multi-adapter-dir", type=str, help="Multi-adapter directory, overrides the setting in the config file")
+    parser.add_argument("--batch-size", type=int, default=16, help="Feature extraction batch size")
     
     args = parser.parse_args()
+    # debugprint(f"Command line arguments: {args}")
     
     # 加载配置
     with open(args.config_file, "r") as f:
@@ -404,7 +410,7 @@ def main():
         eval_args.multi_adapter_dir = args.multi_adapter_dir
         
     if not eval_args.multi_adapter_dir:
-        raise ValueError("未指定multi_adapter_dir，可通过配置文件或--multi-adapter-dir参数提供")
+        raise ValueError("multi_adapter_dir not specified, provide it via config file or --multi-adapter-dir argument")
         
     # 运行选择器
     select_adapter(

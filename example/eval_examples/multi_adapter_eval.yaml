@@ -10,8 +10,3 @@ eval_mode: multi_adapter
 use_abscl_selector: true
 multi_adapter_dir: saves/multi_adapter_results
 cl_tuning_type: lora
-
-# 评估采样参数
-num_beams: 1
-do_sample: false
-max_new_tokens: 32

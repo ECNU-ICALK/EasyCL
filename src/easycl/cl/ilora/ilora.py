@@ -22,6 +22,8 @@ from torch.nn import functional as F
 
 from llamafactory.extras import logging
 
+def debugprint(*args, **kwargs):
+    pass
 
 if TYPE_CHECKING:
     from transformers import PreTrainedModel
@@ -34,113 +36,6 @@ if TYPE_CHECKING:
 logger = logging.get_logger(__name__)
 
 
-class Buffer:
-    """
-    Buffer for storing samples of previous tasks.
-    Uses reservoir sampling for maintaining a fixed size buffer.
-    """
-    
-    def __init__(self, buffer_size: int = 500):
-        """
-        Initialize buffer with a fixed size.
-        
-        Args:
-            buffer_size: Maximum number of samples to store in the buffer.
-        """
-        self.buffer_size = buffer_size
-        self.buffer = []
-        self.sample_count = 0
-        
-    def add_data(self, input_ids: torch.Tensor, attention_mask: torch.Tensor, labels: torch.Tensor) -> None:
-        """
-        Add new samples to the buffer using reservoir sampling.
-        
-        Args:
-            input_ids: Input token ids
-            attention_mask: Attention mask
-            labels: Target labels
-        """
-        batch_size = input_ids.size(0)
-        
-        for i in range(batch_size):
-            # Get single sample
-            single_input = input_ids[i].detach().clone()
-            single_mask = attention_mask[i].detach().clone() if attention_mask is not None else None
-            single_label = labels[i].detach().clone() if labels is not None else None
-            
-            if len(self.buffer) < self.buffer_size:
-                # Buffer not full, add directly
-                self.buffer.append((single_input, single_mask, single_label))
-            else:
-                # Buffer full, use reservoir sampling
-                j = random.randint(0, self.sample_count)
-                if j < self.buffer_size:
-                    self.buffer[j] = (single_input, single_mask, single_label)
-            
-            self.sample_count += 1
-    
-    def get_data(self, batch_size: int = 16) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
-        """
-        Get a random batch of samples from the buffer.
-        
-        Args:
-            batch_size: Number of samples to return.
-            
-        Returns:
-            Tuple of input_ids, attention_mask, and labels.
-        """
-        if not self.buffer:
-            return None, None, None
-            
-        if batch_size > len(self.buffer):
-            batch_size = len(self.buffer)
-            
-        indices = random.sample(range(len(self.buffer)), batch_size)
-        samples = [self.buffer[i] for i in indices]
-        
-        # Pad inputs to the same length
-        input_ids = [sample[0] for sample in samples]
-        attention_masks = [sample[1] for sample in samples]
-        labels = [sample[2] for sample in samples]
-        
-        max_length = max(input_id.size(0) for input_id in input_ids)
-        
-        padded_input_ids = []
-        padded_attention_masks = []
-        padded_labels = []
-        
-        for input_id, mask, label in zip(input_ids, attention_masks, labels):
-            # Pad inputs
-            padding_length = max_length - input_id.size(0)
-            padded_input = F.pad(input_id, (0, padding_length), value=0)
-            padded_input_ids.append(padded_input)
-            
-            # Pad attention masks
-            if mask is not None:
-                padded_mask = F.pad(mask, (0, padding_length), value=0)
-                padded_attention_masks.append(padded_mask)
-            
-            # Pad labels
-            if label is not None:
-                padded_label = F.pad(label, (0, padding_length), value=-100)  # Use -100 to ignore padding in loss
-                padded_labels.append(padded_label)
-        
-        # Stack tensors
-        input_tensor = torch.stack(padded_input_ids, dim=0)
-        attention_mask_tensor = torch.stack(padded_attention_masks, dim=0) if padded_attention_masks and padded_attention_masks[0] is not None else None
-        label_tensor = torch.stack(padded_labels, dim=0) if padded_labels and padded_labels[0] is not None else None
-        
-        return input_tensor, attention_mask_tensor, label_tensor
-    
-    def __len__(self) -> int:
-        """Return the current size of the buffer."""
-        return len(self.buffer)
-    
-    def is_empty(self) -> bool:
-        """Check if buffer is empty."""
-        return len(self.buffer) == 0
-
-
 class ILORA:
     """
     Implementation of I-LORA (Improved LoRA for Continual Learning).
@@ -150,6 +45,7 @@ class ILORA:
     def __init__(
         self,
         model: "PeftModel",
+        finetuning_args: "FinetuningArguments",
         cl_finetuning_args: "CLFinetuningArguments",
         previous_task_model: Optional[str] = None,
         current_task_id: Optional[str] = None,
@@ -163,211 +59,253 @@ class ILORA:
             previous_task_model: Path to previous task model.
             current_task_id: ID of the current task.
         """
+        debugprint("进入 ILORA.__init__")
         self.model = model
         self.ema_alpha = cl_finetuning_args.ema_alpha
         self.reg_weight = cl_finetuning_args.consistency_weight
-        self.buffer_size = cl_finetuning_args.ilora_buffer_size
         self.selective_update = cl_finetuning_args.selective_update
         self.min_update_threshold = cl_finetuning_args.min_update_threshold
         self.hidden_state_layers = cl_finetuning_args.hidden_state_layers
-        
-        # Initialize buffer
-        self.buffer = Buffer(buffer_size=self.buffer_size)
+        debugprint(f"  从 cl_finetuning_args 获取参数:")
+        debugprint(f"    ema_alpha: {self.ema_alpha}")
+        debugprint(f"    consistency_weight (reg_weight): {self.reg_weight}")
+        debugprint(f"    selective_update: {self.selective_update}")
+        debugprint(f"    min_update_threshold: {self.min_update_threshold}")
+        debugprint(f"    hidden_state_layers: {self.hidden_state_layers}")
         
         # Initialize MSE loss
-        self.consistency_loss = nn.MSELoss(reduction='none')
+        self.consistency_loss = nn.MSELoss(reduction='mean')
+        debugprint(f"  初始化一致性损失函数: {self.consistency_loss}")
         
         # Set defaults for paths
         self.previous_task_model = previous_task_model
         self.current_task_id = current_task_id
+        debugprint(f"  previous_task_model: {self.previous_task_model}")
+        debugprint(f"  current_task_id: {self.current_task_id}")
         
-        logger.info_rank0(f"Initialized ILORA with buffer size {self.buffer_size}, EMA alpha {self.ema_alpha}, and regularization weight {self.reg_weight}.")
+        logger.info_rank0(f"Initialized ILORA without buffer, EMA alpha {self.ema_alpha}, and regularization weight {self.reg_weight}.")
+        debugprint("退出 ILORA.__init__")
         
     def update_ema_weights(self) -> None:
         """
         Update EMA adapter weights from the current adapter (default).
         """
+        debugprint("进入 ILORA.update_ema_weights")
         if not hasattr(self.model, "peft_config"):
             logger.warning_rank0("Model is not a PEFT model, cannot update EMA weights.")
+            debugprint("  模型不是 PEFT 模型，跳过 EMA 更新")
             return
             
-        # 检查模型是否同时具有default和ema适配器
-        has_default = hasattr(self.model, "peft_config") and "default" in self.model.peft_config
-        has_ema = hasattr(self.model, "peft_config") and "ema" in self.model.peft_config
+        # 检查模型是否同时具有 default 和 ema 适配器
+        has_default = "default" in self.model.peft_config
+        has_ema = "ema" in self.model.peft_config
+        debugprint(f"  检查适配器存在性: default={has_default}, ema={has_ema}")
         
         if not has_default or not has_ema:
             logger.warning_rank0("Model does not have both 'default' and 'ema' adapters, skipping EMA update.")
+            debugprint("  缺少 default 或 ema 适配器，跳过 EMA 更新")
             return
 
+        current_active = None
+        if hasattr(self.model, "active_adapter"): 
+             current_active = self.model.active_adapter
+             debugprint(f"  当前活动适配器: {current_active}")
+        else:
+             debugprint("  警告: 模型没有 active_adapter 属性")
+             return # 如果没有活动适配器，无法安全地切换和恢复
+             
         # 获取当前模型参数
         try:
-            current_active = self.model.active_adapter
+            debugprint("  切换到 default 适配器获取参数")
             self.model.set_adapter("default")
             default_state = {}
-            
-            # 单独收集default适配器的参数
+            # 单独收集 default 适配器的可训练参数 (LoRA 参数)
             for name, param in self.model.named_parameters():
+                # 检查是否为 LoRA 参数且需要梯度
                 if "lora" in name and param.requires_grad:
-                    default_state[name] = param.data.clone()
+                    # 提取相对于 base_model.model 的名称，用于匹配 EMA 参数
+                    # 例如: base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight
+                    rel_name = name.split("base_model.model.")[-1] 
+                    default_state[rel_name] = param.data.clone()
+                    # debugprint(f"    获取 default 参数: {rel_name} (来自 {name})")
             
             # 如果没有参数，可能是配置错误
             if not default_state:
-                logger.warning_rank0("Default adapter appears to have no parameters, skipping EMA update.")
+                logger.warning_rank0("Default adapter appears to have no trainable LoRA parameters, skipping EMA update.")
+                debugprint("  Default 适配器没有可训练的 LoRA 参数，跳过 EMA 更新")
+                self.model.set_adapter(current_active)
                 return
+            debugprint(f"  获取了 {len(default_state)} 个 default LoRA 参数")
                 
-            # 现在获取EMA适配器参数
+            # 现在切换到 EMA 适配器并更新其参数
+            debugprint("  切换到 ema 适配器进行更新")
             self.model.set_adapter("ema")
-            ema_state = {}
-            
-            # 收集EMA适配器参数
+            update_count = 0
+            # 遍历 EMA 适配器的参数 (这些参数应该是 frozen 的)
             for name, param in self.model.named_parameters():
-                if "lora" in name and "ema" in name and not param.requires_grad:
-                    ema_state[name] = param.data.clone()
-            
-            # 如果没有EMA参数，尝试从default复制
-            if not ema_state:
-                logger.warning_rank0("EMA adapter has no parameters, initializing from default.")
-                # 这里我们会在下面的更新循环中处理
-        
-            # 更新EMA权重
-            for default_name, default_param in default_state.items():
-                # 将default参数名称转换为对应的ema参数名称
-                if "lora" in default_name and "default" not in default_name:
-                    ema_name = default_name.replace("base_model.model.", "base_model.model.ema.")
-                    
-                    if ema_name in ema_state:
-                        # EMA更新
-                        ema_state[ema_name] = self.ema_alpha * default_param + (1 - self.ema_alpha) * ema_state[ema_name]
-                    else:
-                        # 如果EMA中没有对应参数，直接复制
-                        ema_state[ema_name] = default_param.clone()
-                
-            # 将更新后的权重应用到EMA适配器
-            self.model.set_adapter("ema")
-            for name, param in self.model.named_parameters():
-                if name in ema_state:
-                    param.data = ema_state[name].to(param.device)
+                # 检查是否为 EMA 的 LoRA 参数且不需要梯度
+                if "lora" in name and "ema." in name and not param.requires_grad:
+                     # 提取相对于 base_model.model 的名称，并移除 'ema.'
+                     # 例如: base_model.model.ema.model.layers.0.self_attn.q_proj.lora_A.weight
+                     # -> model.layers.0.self_attn.q_proj.lora_A.weight
+                     rel_name_ema = name.split("base_model.model.ema.")[-1]
+                     # debugprint(f"    检查 EMA 参数: {rel_name_ema} (来自 {name})")
+
+                     if rel_name_ema in default_state:
+                         default_param = default_state[rel_name_ema]
+                         # EMA 更新公式
+                         new_ema_param = self.ema_alpha * default_param.to(param.device) + (1 - self.ema_alpha) * param.data
+                         param.data = new_ema_param
+                         update_count += 1
+                         # debugprint(f"      更新 EMA 参数 {rel_name_ema}")
+                     # else:
+                         # debugprint(f"      警告: EMA 参数 {rel_name_ema} 在 default_state 中未找到对应项")
+                         
+            debugprint(f"  更新了 {update_count} 个 EMA LoRA 参数")
             
             # 恢复原始适配器
+            debugprint(f"  恢复活动适配器为: {current_active}")
             self.model.set_adapter(current_active)
             
         except Exception as e:
-            logger.warning_rank0(f"Updating EMA weights failed: {e}")
-            self.model.set_adapter(current_active)  # 确保恢复adapter状态
+            logger.warning_rank0(f"Updating EMA weights failed: {e}", exc_info=True)
+            debugprint(f"  更新 EMA 权重时发生异常: {e}")
+            if current_active is not None: # 确保在异常时恢复 adapter 状态
+                debugprint(f"  (异常处理) 恢复活动适配器为: {current_active}")
+                self.model.set_adapter(current_active)
+        finally:
+             # 确保无论如何都尝试恢复
+             if current_active is not None and hasattr(self.model, 'active_adapter') and self.model.active_adapter != current_active:
+                  debugprint(f"  (finally 块) 恢复活动适配器为: {current_active}")
+                  self.model.set_adapter(current_active)
+
+        debugprint("退出 ILORA.update_ema_weights")
         
     def compute_consistency_loss(
         self,
-        input_ids: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        labels: Optional[torch.Tensor] = None,
-        **kwargs
+        input_ids: torch.Tensor, # 当前 batch 的 input_ids
+        attention_mask: Optional[torch.Tensor] = None, # 当前 batch
+        labels: Optional[torch.Tensor] = None, # 当前 batch (未使用)
+        **kwargs # 传递给 model forward 的其他参数
     ) -> torch.Tensor:
         """
         Compute consistency loss between current model (default adapter) and EMA model (ema adapter).
+        Uses samples from the buffer.
         
         Args:
-            input_ids: Input token ids
-            attention_mask: Attention mask
-            labels: Target labels
+            input_ids: Input token ids from the current batch (used for device placement).
+            attention_mask: Attention mask from the current batch (unused).
+            labels: Target labels from the current batch (unused).
             
         Returns:
             Consistency loss tensor
         """
-        # If no buffer samples yet, return zero loss
-        buffer_inputs, buffer_masks, buffer_labels = self.buffer.get_data(min(16, len(self.buffer)))
+        debugprint("进入 ILORA.compute_consistency_loss")
         
-        if buffer_inputs is None:
-            # Add a log to record that consistency loss is zero due to empty buffer
+        # --- Pre-check for EMA adapter --- 
+        debugprint("  前置检查: 'ema' 适配器是否存在?")
+        if not hasattr(self.model, 'peft_config') or 'ema' not in self.model.peft_config:
+            logger.warning_rank0("'ema' adapter not found in model.peft_config at the start of compute_consistency_loss. Returning zero loss.")
+            debugprint("  前置检查失败: 'ema' 适配器未找到。直接返回零损失。")
+            if hasattr(self.model, 'peft_config'):
+                debugprint(f"    当前可用适配器: {list(self.model.peft_config.keys())}")
+            else:
+                debugprint("    模型没有 peft_config 属性。")
             return torch.tensor(0.0, device=input_ids.device)
+        debugprint("  前置检查通过: 'ema' 适配器存在。")
+        # --- End Pre-check ---
         
-        # Record buffer sample count for debugging
+        target_device = input_ids.device
+        # 使用当前批次数据
+        debugprint(f"  使用当前批次数据 (device: {target_device}, shape: {input_ids.shape}) 计算一致性损失")
         
-        buffer_inputs = buffer_inputs.to(input_ids.device)
-        if buffer_masks is not None:
-            buffer_masks = buffer_masks.to(input_ids.device)
-        if buffer_labels is not None:
-            buffer_labels = buffer_labels.to(input_ids.device)
+        # 获取当前活动适配器以备恢复
+        current_active = None
+        if hasattr(self.model, "active_adapter"): 
+            current_active = self.model.active_adapter
+            debugprint(f"  当前活动适配器: {current_active}")
+        else:
+            debugprint("  警告: 模型没有 active_adapter 属性，无法安全计算一致性损失")
+            return torch.tensor(0.0, device=input_ids.device)
             
-        # Forward pass with the current model (plastic) using default adapter
-        self.model.set_adapter("default")
-        plastic_outputs = self.model(
-            input_ids=buffer_inputs,
-            attention_mask=buffer_masks,
-            labels=buffer_labels,
-            output_hidden_states=True,
-            return_dict=True,
-            **kwargs
-        )
-        
-        plastic_hidden = plastic_outputs.hidden_states
-        
-        # Forward pass with the EMA model (stable) using ema adapter
-        self.model.set_adapter("ema")
-        with torch.no_grad():
-            stable_outputs = self.model(
-                input_ids=buffer_inputs,
-                attention_mask=buffer_masks,
-                labels=buffer_labels,
+        l_cons = torch.tensor(0.0, device=target_device)
+        try:
+            # 使用 default 适配器进行前向传播
+            self.model.set_adapter("default")
+            plastic_outputs = self.model(
+                input_ids=input_ids,         # 使用当前批次的 input_ids
+                attention_mask=attention_mask, # 使用当前批次的 attention_mask
                 output_hidden_states=True,
                 return_dict=True,
                 **kwargs
             )
-            stable_hidden = stable_outputs.hidden_states
-        
-        # Select which hidden states to compute consistency on
-        selected_plastic = []
-        selected_stable = []
-        
-        for layer_idx in self.hidden_state_layers:
-            if layer_idx < 0:
-                layer_idx = len(plastic_hidden) + layer_idx  # Convert negative index to positive
+            plastic_hidden = plastic_outputs.hidden_states
+
+            # 使用 ema 适配器进行前向传播 (no_grad)
+            self.model.set_adapter("ema")
+            with torch.no_grad():
+                stable_outputs = self.model(
+                    input_ids=input_ids,         # 使用当前批次的 input_ids
+                    attention_mask=attention_mask, # 使用当前批次的 attention_mask
+                    output_hidden_states=True,
+                    return_dict=True,
+                    **kwargs
+                )
+                stable_hidden = stable_outputs.hidden_states
+
+            if not plastic_hidden or not stable_hidden or len(plastic_hidden) != len(stable_hidden):
+                 debugprint("  获取的隐藏状态为空或数量不匹配，无法计算一致性损失")
+                 self.model.set_adapter(current_active) # 恢复适配器
+                 return l_cons
+                 
+            # Select which hidden states to compute consistency on
+            selected_plastic = []
+            selected_stable = []
+            debugprint(f"  根据 hidden_state_layers ({self.hidden_state_layers}) 选择隐藏层")
+            num_layers = len(plastic_hidden)
+            for layer_idx in self.hidden_state_layers:
+                actual_idx = layer_idx if layer_idx >= 0 else num_layers + layer_idx
+                if 0 <= actual_idx < num_layers:
+                    selected_plastic.append(plastic_hidden[actual_idx])
+                    selected_stable.append(stable_hidden[actual_idx])
+                    debugprint(f"    选择层索引: {actual_idx} (原始: {layer_idx})")
+                else:
+                    debugprint(f"    警告: 层索引 {actual_idx} (原始: {layer_idx}) 超出范围 [0, {num_layers-1}]，已跳过")
             
-            if 0 <= layer_idx < len(plastic_hidden):
-                selected_plastic.append(plastic_hidden[layer_idx])
-                selected_stable.append(stable_hidden[layer_idx])
-        
-        # Compute consistency loss with selective update
-        layer_losses = []
-        
-        for plastic, stable in zip(selected_plastic, selected_stable):
-            if self.selective_update:
-                # Create mask for selective update - only update where plastic model is better
-                plastic_loss = (plastic - buffer_labels.unsqueeze(-1)).abs()
-                stable_loss = (stable - buffer_labels.unsqueeze(-1)).abs()
-                update_mask = (plastic_loss < stable_loss).float() * (plastic_loss > self.min_update_threshold).float()
-                
-                # Compute MSE loss with mask
-                layer_loss = self.consistency_loss(plastic, stable)
-                masked_loss = layer_loss * update_mask
-                layer_losses.append(masked_loss.mean())
-            else:
-                # Regular MSE loss
-                layer_loss = self.consistency_loss(plastic, stable).mean()
+            if not selected_plastic:
+                 debugprint("  没有成功选择任何隐藏层，一致性损失为 0")
+                 self.model.set_adapter(current_active) # 恢复适配器
+                 return l_cons
+                 
+            debugprint(f"  共选择了 {len(selected_plastic)} 层用于计算一致性损失")
+            # Compute consistency loss
+            layer_losses = []
+            debugprint(f"  计算所选层之间的 MSE 损失 (selective_update: {self.selective_update})")
+            for i, (plastic, stable) in enumerate(zip(selected_plastic, selected_stable)):
+                debugprint(f"    计算层 {i+1}/{len(selected_plastic)} 的损失 (shape: {plastic.shape})")
+                # 直接计算 MSE 损失，不使用 selective update （保持与原始论文一致）
+                layer_loss = self.consistency_loss(plastic, stable) # 使用 mean reduction
+                debugprint(f"      层 {i} 损失: {layer_loss.item()}")
                 layer_losses.append(layer_loss)
-        
-        # Average losses across all selected layers
-        if layer_losses:
-            l_cons = torch.stack(layer_losses).mean()
-        else:
-            l_cons = torch.tensor(0.0, device=input_ids.device)
             
-        # Reset adapter to default for further training
-        self.model.set_adapter("default")
-        
+            # Average losses across all selected layers
+            if layer_losses:
+                l_cons = torch.stack(layer_losses).mean()
+                debugprint(f"  最终平均一致性损失 (l_cons): {l_cons.item()}")
+            else:
+                debugprint("  layer_losses 列表为空，一致性损失为 0")
+                l_cons = torch.tensor(0.0, device=target_device)
+                
+        except Exception as e:
+            logger.warning_rank0(f"Computing consistency loss failed: {e}", exc_info=True)
+            debugprint(f"  计算一致性损失时发生异常: {e}")
+            l_cons = torch.tensor(0.0, device=target_device) # 异常时返回 0
+            
+        finally:
+            # Reset adapter to default (or original active) for further training
+            if current_active is not None:
+                debugprint(f"  (finally 块) 恢复活动适配器为: {current_active}")
+                self.model.set_adapter(current_active)
+            
+        debugprint(f"退出 ILORA.compute_consistency_loss (使用当前批次), 返回损失: {l_cons.item()}")
         return l_cons
-    
-    def store_sample(
-        self,
-        input_ids: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        labels: Optional[torch.Tensor] = None
-    ) -> None:
-        """
-        Store a batch of samples in the buffer.
-        
-        Args:
-            input_ids: Input token ids
-            attention_mask: Attention mask
-            labels: Target labels
-        """
-        self.buffer.add_data(input_ids, attention_mask, labels)

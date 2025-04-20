@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from easycl.cl.ilora.ilora import ILORA, Buffer
+from easycl.cl.ilora.ilora import ILORA
 from easycl.cl.ilora.ilora_adapter import init_ilora_adapter
 from easycl.cl.ilora.ilora_loader import load_ilora_model
 from easycl.cl.ilora.ilora_trainer import ILORATrainer
@@ -20,7 +20,6 @@ from easycl.cl.ilora.ilora_workflow import run_sft_ilora
 
 __all__ = [
     "ILORA",
-    "Buffer",
     "init_ilora_adapter",
     "load_ilora_model",
     "ILORATrainer",

@@ -11,8 +11,6 @@
 <details>
 <summary>🚧 <strong>Known Issues / Upcoming Features</strong></summary>
 
-*   [Issue] Pseudo-replay method reads tokenized data instead of raw data.
-*   [Issue] Gradient Episodic Memory (GEM) causes out-of-memory errors.
 *   [TODO] Compare results of MoE-LoRA related methods with original implementations.
 *   [Feature] Planning to add support for [New Method/Feature].
 *   Optimizing memory usage during [Specific Process].
@@ -22,9 +20,12 @@
 <details>
 <summary>✅ <strong>Resolved Issues / Completed Features</strong></summary>
 
-*   [Resolved] Evaluation does not correctly depend on `dataset_info.json`.
-*   [Resolved] Evaluation uses overly strict generation parameters (e.g., MMLU parameters).
-*   (This section will be updated as issues are resolved and features are completed. Format: `[Type #ID] Description (YYYY-MM-DD)`)
+*   [Resolved] Evaluation does not correctly depend on `dataset_info.json` (2025-04-19).
+*   [Resolved] Evaluation uses overly strict generation parameters (e.g., MMLU parameters) (2025-04-19).
+*   [Resolved] Pseudo-replay method reads tokenized data instead of raw data (2025-04-20).
+*   [Resolved] Gradient Episodic Memory (GEM) causes out-of-memory errors (2025-04-20).
+*   [Resolved] Improved O-LoRA logic and fixed dimension mismatch issues (2025-04-20).
+*   [Resolved] Fixed issues related to pseudo-sample generation methods and checked parameter imports for all existing methods (2025-04-20).
 
 </details>
 

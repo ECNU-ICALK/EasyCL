@@ -1,20 +1,8 @@
-# Copyright 2024 HuggingFace Inc. and the LlamaFactory team.
-# Modifications copyright 2024 Your Name/Org (if applicable)
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import torch
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union, Any
+
+def debugprint(*args, **kwargs):
+    pass
 
 from llamafactory.train.sft.trainer import CustomSeq2SeqTrainer
 from llamafactory.extras.logging import get_logger
@@ -33,18 +21,21 @@ class GEMSeq2SeqTrainer(CustomSeq2SeqTrainer):
     between current task samples and episodic memory samples.
     Inherits from CustomSeq2SeqTrainer.
     """
-    def __init__(self, finetuning_args: "FinetuningArguments", cl_finetuning_args: "CLFinetuningArguments", *args, **kwargs):
-        # Pass finetuning_args to the parent class constructor
-        super().__init__(finetuning_args=finetuning_args, *args, **kwargs)
+    def __init__(self, finetuning_args: "FinetuningArguments", cl_finetuning_args: "CLFinetuningArguments", processor: Optional[Any] = None, *args, **kwargs):
+        # Pass finetuning_args and processor to the parent class constructor
+        super().__init__(finetuning_args=finetuning_args, processor=processor, *args, **kwargs)
         self.cl_finetuning_args = cl_finetuning_args
+        debugprint(f"GEM Trainer __init__: 传入的 cl_finetuning_args: {cl_finetuning_args}") # Debug print for CL args
         if not cl_finetuning_args.use_gem:
              # Log a warning or potentially raise an error if GEM trainer is used without the flag
              logger.warning("GEMSeq2SeqTrainer initialized, but use_gem in cl_finetuning_args is False.")
              # Store a default or disable GEM specific logic
              self.gem_memory_strength = 0.0 # Effectively disables projection
+             debugprint("GEM Trainer __init__: use_gem 为 False, GEM 强度设置为 0.0") # Debug print for GEM disabled
         else:
             self.gem_memory_strength = cl_finetuning_args.gem_memory_strength
             logger.info(f"GEM Trainer initialized with memory strength: {self.gem_memory_strength}")
+            debugprint(f"GEM Trainer __init__: use_gem 为 True, GEM 强度设置为: {self.gem_memory_strength}") # Debug print for GEM enabled
 
     def compute_loss(self, model: "PreTrainedModel", inputs: Dict[str, Union[torch.Tensor, Any]], return_outputs=False,num_items_in_batch=None) -> Union[torch.Tensor, Tuple[torch.Tensor, Optional[Dict]]]:
         """
@@ -58,23 +49,30 @@ class GEMSeq2SeqTrainer(CustomSeq2SeqTrainer):
         Returns:
             The computed loss (potentially after gradient modification), and optionally the model outputs.
         """
+        debugprint(f"GEM compute_loss: 方法入口, 输入键: {list(inputs.keys())}, return_outputs: {return_outputs}") # Debug print at method start
         # If GEM is disabled (strength=0) or not use_gem flag, revert to standard loss computation
         if not hasattr(self, 'gem_memory_strength') or self.gem_memory_strength <= 0:
+             debugprint("GEM compute_loss: GEM 强度 <= 0 或未设置, 执行标准 compute_loss") # Debug print for standard path
              return super().compute_loss(model, inputs, return_outputs=return_outputs)
              
         if "is_memory" not in inputs or not isinstance(inputs["is_memory"], torch.Tensor):
+            debugprint("GEM compute_loss: 错误 - 输入中缺少 'is_memory' 字段") # Debug print for missing 'is_memory'
             raise ValueError(
                 "GEMTrainer requires each batch sample to have an 'is_memory' boolean tensor field "
                 "to distinguish current task vs. memory samples."
             )
+        
+        debugprint(f"GEM compute_loss: 找到 'is_memory' 字段, 形状: {inputs['is_memory'].shape}") # Debug print for 'is_memory' found
 
         is_memory = inputs["is_memory"]
         current_mask = ~is_memory
         memory_mask = is_memory
+        debugprint(f"GEM compute_loss: current_mask 中 True 的数量: {current_mask.sum()}, memory_mask 中 True 的数量: {memory_mask.sum()}") # Debug print for mask counts
 
         # Handle cases where a batch might only contain current or memory samples
         has_current_samples = torch.any(current_mask)
         has_memory_samples = torch.any(memory_mask)
+        debugprint(f"GEM compute_loss: 是否有当前样本: {has_current_samples}, 是否有记忆样本: {has_memory_samples}") # Debug print for sample presence
         
         # If no current samples, only calculate memory loss for potential stats, but return 0 loss
         # as we don't optimize based on memory alone in this step.
@@ -82,118 +80,171 @@ class GEMSeq2SeqTrainer(CustomSeq2SeqTrainer):
             logger.warning_once("Received a batch with only memory samples. Skipping GEM gradient calculation for this batch.")
             # Still might need to compute outputs if requested for evaluation etc.
             if return_outputs:
-                # Need to decide what outputs to return - maybe just run forward pass on memory?
-                # For simplicity, let's return 0 loss and None outputs if only memory present in training
-                # This assumes return_outputs=False during standard training steps
+                debugprint("GEM compute_loss: 只有记忆样本, 返回 0 损失和 None 输出") # Debug print for memory-only batch (return outputs)
                 return (torch.tensor(0.0, device=model.device, requires_grad=True), None) if return_outputs else torch.tensor(0.0, device=model.device, requires_grad=True)
             else:
+                 debugprint("GEM compute_loss: 只有记忆样本, 返回 0 损失") # Debug print for memory-only batch
                  return torch.tensor(0.0, device=model.device, requires_grad=True)
 
         # Separate inputs
         # Ensure we handle metadata columns gracefully (like 'is_memory')
         current_inputs = {k: v[current_mask] for k, v in inputs.items() if isinstance(v, torch.Tensor)}        
+        debugprint(f"GEM compute_loss: 分离出当前任务输入, 键: {list(current_inputs.keys())}") # Debug print for separated current inputs
         
         # Step 1: Compute current task loss and potentially outputs
         # We need the loss object itself for backpropagation
+        debugprint("GEM compute_loss: 开始计算当前任务损失") # Debug print before current loss calc
         loss_current_tuple = super().compute_loss(model, current_inputs, return_outputs=True) # Request outputs
         loss_current = loss_current_tuple[0]
         outputs_current = loss_current_tuple[1]
+        debugprint(f"GEM compute_loss: 计算得到当前任务损失: {loss_current.item() if isinstance(loss_current, torch.Tensor) else loss_current}") # Debug print after current loss calc
 
         # Step 2: Compute gradient for the current task
+        debugprint("GEM compute_loss: 开始计算当前任务梯度") # Debug print before current grad calc
         g_current = self._get_grads(model, loss_current)
         if g_current is None:
              logger.warning_once("Could not compute gradients for the current task batch. Skipping GEM projection.")
+             debugprint("GEM compute_loss: 无法计算当前任务梯度, 跳过 GEM 投影") # Debug print for failed current grad calc
              # Return the original loss and outputs if gradient calculation failed
              return (loss_current.detach(), outputs_current) if return_outputs else loss_current.detach()
+        debugprint(f"GEM compute_loss: 计算得到当前任务梯度, 形状: {g_current.shape}") # Debug print after current grad calc
+        if g_current is not None:
+            g_current_norm = torch.norm(g_current).item()
+            g_current_l1 = torch.sum(torch.abs(g_current)).item()
+            debugprint(f"GEM compute_loss: 当前任务梯度 g_current - L2范数: {g_current_norm:.4f}, L1范数: {g_current_l1:.4f}, 设备: {g_current.device}")
              
         # If no memory samples in this batch, behave like normal training
         if not has_memory_samples:
             # Gradients are already on the parameters from _get_grads (due to retain_graph=True),
             # so just return the loss. The optimizer step will use these gradients.
+            debugprint("GEM compute_loss: 无记忆样本, 返回原始当前任务损失和梯度") # Debug print for no memory samples
             return (loss_current, outputs_current) if return_outputs else loss_current
 
         # Step 3: Compute memory loss and gradient (only if memory samples exist)
         memory_inputs = {k: v[memory_mask] for k, v in inputs.items() if isinstance(v, torch.Tensor)}    
-        # We only need the loss value to compute gradients, no need for outputs here
-        # Use .detach() on the loss to prevent graph connection back to current task computation if any shared layers exist? 
-        # No, compute_loss should handle model state correctly. Use retain_graph in _get_grads.    
+        debugprint(f"GEM compute_loss: 分离出记忆任务输入, 键: {list(memory_inputs.keys())}") # Debug print for separated memory inputs
         loss_memory = super().compute_loss(model, memory_inputs, return_outputs=False)
+        debugprint(f"GEM compute_loss: 计算得到记忆任务损失: {loss_memory.item() if isinstance(loss_memory, torch.Tensor) else loss_memory}") # Debug print after memory loss calc
         # Detach the memory loss before computing grads for projection? 
         # The gradient itself should be detached in _project_gem_qp. Loss needs grad_fn.
+        debugprint("GEM compute_loss: 开始计算记忆任务梯度") # Debug print before memory grad calc
         g_memory = self._get_grads(model, loss_memory)
         
         if g_memory is None:
             logger.warning_once("Could not compute gradients for the memory samples in this batch. Skipping GEM projection.")
+            debugprint("GEM compute_loss: 无法计算记忆任务梯度, 跳过 GEM 投影") # Debug print for failed memory grad calc
             # Proceed as if no memory samples were present
             return (loss_current, outputs_current) if return_outputs else loss_current
+        # Print memory gradient info only if it was successfully computed
+        debugprint(f"GEM compute_loss: 计算得到记忆任务梯度, 形状: {g_memory.shape}") # Debug print after memory grad calc
+        g_memory_norm = torch.norm(g_memory).item()
+        g_memory_l1 = torch.sum(torch.abs(g_memory)).item()
+        debugprint(f"GEM compute_loss: 记忆任务梯度 g_memory - L2范数: {g_memory_norm:.4f}, L1范数: {g_memory_l1:.4f}, 设备: {g_memory.device}")
 
         # Step 4: Check for conflict and project if needed
-        dot_product = torch.dot(g_current.detach(), g_memory.detach())
+        # Detach gradients before dot product to ensure it's just a value comparison
+        g_current_detached = g_current.detach()
+        g_memory_detached = g_memory.detach()
+        dot_product = torch.dot(g_current_detached, g_memory_detached)
+        debugprint(f"GEM compute_loss: 计算得到梯度点积 (g_current . g_memory): {dot_product.item()}") # Debug print for dot product
 
         if dot_product < 0:
             logger.debug(f"GEM conflict detected (dot product: {dot_product:.4f}). Projecting gradient.")
-            g_projected = self._project_gem_qp(g_current, [g_memory]) # Pass memory grad as a list
+            debugprint(f"GEM compute_loss: 检测到冲突 (点积 < 0), 准备进行 GEM 梯度投影") # Debug print for conflict detected
+            # Note: Pass the original g_current (with grad info if needed by proj) and detached memory grads
+            g_projected = self._project_gem_qp(g_current, [g_memory_detached]) # Pass detached memory grad to QP
+            debugprint(f"GEM compute_loss: GEM 投影完成, 得到投影后的梯度 g_projected, 形状: {g_projected.shape}") # Debug print after projection
             # Assign the projected gradient back to the model parameters
+            debugprint("GEM compute_loss: 开始将投影后的梯度 g_projected 分配给模型参数") # Debug print before assigning projected grad
             self._assign_grads(model, g_projected)
+            debugprint("GEM compute_loss: 分配投影后的梯度 g_projected 完成") # Debug print after assigning projected grad
             # The loss returned is still the original current task loss
-            loss_to_return = loss_current 
+            loss_to_return = loss_current
         else:
             logger.debug(f"No GEM conflict (dot product: {dot_product:.4f}). Using original gradient.")
+            debugprint(f"GEM compute_loss: 未检测到冲突 (点积 >= 0), 将使用原始当前任务梯度 g_current") # Debug print for no conflict
             # If no conflict, the gradients computed by _get_grads(loss_current) are already
-            # associated with the parameters. We just need to return the loss.
-            # No need to call backward() again here, as _get_grads did it.
+            # associated with the parameters (due to retain_graph=True in _get_grads).
+            # We just need to return the loss.
             loss_to_return = loss_current
 
         # Return the original current task loss (and outputs if requested)
         # The optimizer will use the gradients currently assigned to model.parameters()
         # (which might be the original g_current or the projected g_projected)
+        debugprint(f"GEM compute_loss: 方法出口, 返回损失: {loss_to_return.item() if isinstance(loss_to_return, torch.Tensor) else loss_to_return}") # Debug print at method exit
         return (loss_to_return, outputs_current) if return_outputs else loss_to_return
 
     def _get_grads(self, model: "PreTrainedModel", loss: torch.Tensor) -> Optional[torch.Tensor]:
         """Computes and returns the flattened gradients for the given loss."""
+        debugprint(f"GEM _get_grads: 方法入口, 损失值: {loss.item() if isinstance(loss, torch.Tensor) and loss.numel() == 1 else loss}, 是否需要梯度: {loss.requires_grad if isinstance(loss, torch.Tensor) else '非张量'}") # Debug print at method start
         if loss == 0.0 or not loss.requires_grad:
+             debugprint("GEM _get_grads: 损失为 0 或不需要梯度, 返回 None") # Debug print for zero/no-grad loss
              return None # Cannot compute gradients if loss is zero or doesn't require grad
 
         model.zero_grad() # Ensure grads are clean before backward
+        debugprint("GEM _get_grads: 执行 model.zero_grad()") # Debug print after zero_grad
         
         # Need to handle potential DistributedDataParallel scenarios if applicable
         # For now, assume standard single/multi-GPU setup handled by Trainer
         try:
+            debugprint("GEM _get_grads: 开始执行 loss.backward(retain_graph=True)") # Debug print before backward
             loss.backward(retain_graph=True) # Retain graph is crucial for computing multiple grads
+            debugprint("GEM _get_grads: loss.backward(retain_graph=True) 执行成功") # Debug print after successful backward
         except RuntimeError as e:
             logger.error(f"Error during backward pass: {e}. This might happen if the graph was already freed.")
+            debugprint(f"GEM _get_grads: loss.backward 发生错误: {e}") # Debug print for backward error
             return None # Indicate failure
             
         grads = []
-        for param in model.parameters():
+        debugprint("GEM _get_grads: 开始收集参数梯度") # Debug print before collecting grads
+        non_zero_grads_count = 0
+        grads_l1_sum = 0.0
+        for name, param in model.named_parameters(): # Iterate with names for potential logging
             if param.requires_grad and param.grad is not None:
-                grads.append(param.grad.view(-1))
-            # elif param.requires_grad and param.grad is None:
+                # debugprint(f"GEM _get_grads: 收集到参数 '{name}' 的梯度, 形状: {param.grad.shape}") # Example: Verbose print for each grad
+                grad_view = param.grad.view(-1)
+                grads.append(grad_view)
+                grad_l1 = torch.sum(torch.abs(grad_view)).item()
+                grads_l1_sum += grad_l1
+                if grad_l1 > 1e-9: # Check if grad is effectively non-zero
+                    non_zero_grads_count += 1
+            elif param.requires_grad and param.grad is None:
                 # logger.warning_once(f"Parameter {name} requires grad but grad is None") 
-                # pass # Potentially handle parameters that don't get gradients?
+                # debugprint(f"GEM _get_grads: 警告 - 参数 '{name}' 需要梯度但梯度为 None") # Example: Debug print for None grad
+                pass # Potentially handle parameters that don't get gradients?
         
         if not grads:
             logger.warning_once("No gradients found for the model parameters.")
+            debugprint("GEM _get_grads: 未找到任何梯度") # Debug print for no grads found
             return None
             
         # It's important gradients are on the same device for dot product / projection
         # Assuming all grads will be on the same device as the first one
+        debugprint(f"GEM _get_grads: 收集到 {len(grads)} 个梯度张量, 其中 {non_zero_grads_count} 个非零 (L1 > 1e-9), L1范数总和: {grads_l1_sum:.4f}") # Debug print after collecting grads
         device = grads[0].device
+        debugprint(f"GEM _get_grads: 收集到 {len(grads)} 个梯度张量, 目标设备: {device}") # Debug print before concatenating
         try:
             flat_grads = torch.cat(grads).to(device)
+            flat_grads_norm = torch.norm(flat_grads).item()
+            flat_grads_l1 = torch.sum(torch.abs(flat_grads)).item()
+            debugprint(f"GEM _get_grads: 梯度扁平化成功, 形状: {flat_grads.shape}, 设备: {flat_grads.device}, L2范数: {flat_grads_norm:.4f}, L1范数: {flat_grads_l1:.4f}") # Debug print after successful concatenation
             return flat_grads
         except Exception as e:
             logger.error(f"Error concatenating gradients: {e}")
+            debugprint(f"GEM _get_grads: 梯度拼接时出错: {e}") # Debug print for concatenation error
             return None
 
     def _assign_grads(self, model: "PreTrainedModel", flat_grad: torch.Tensor):
         """Assigns the flattened gradient `flat_grad` back to the model parameters."""
+        debugprint(f"GEM _assign_grads: 方法入口, 待分配的扁平梯度形状: {flat_grad.shape}") # Debug print at method start
         pointer = 0
-        for param in model.parameters():
+        for name, param in model.named_parameters(): # Iterate with names for potential logging
             if param.requires_grad and param.grad is not None: # Check grad is not None
                 numel = param.grad.numel()
+                # debugprint(f"GEM _assign_grads: 正在为参数 '{name}' (元素数量: {numel}) 分配梯度切片 (指针: {pointer})") # Example: Verbose print
                 if pointer + numel > flat_grad.numel():
                     logger.error("Gradient assignment error: flat_grad is smaller than the total number of gradient elements.")
+                    debugprint(f"GEM _assign_grads: 错误 - 扁平梯度大小不足以分配给参数 '{name}' (指针: {pointer}, 需要: {numel}, 总大小: {flat_grad.numel()})") # Debug print for size mismatch error
                     break
                 # Ensure device compatibility before copying
                 param.grad.copy_(flat_grad[pointer : pointer + numel].view_as(param.grad).to(param.device))
@@ -201,9 +252,12 @@ class GEMSeq2SeqTrainer(CustomSeq2SeqTrainer):
             # elif param.requires_grad and param.grad is None:
                 # If grad was None initially, should we assign it? 
                 # Generally no, stick to params that had grads.
+                # debugprint(f"GEM _assign_grads: 跳过参数 '{name}', 因为其原始梯度为 None") # Example: Debug print for skipped None grad param
                 # pass
+        debugprint(f"GEM _assign_grads: 分配完成, 最终指针位置: {pointer}") # Debug print after loop
         if pointer != flat_grad.numel():
              logger.warning(f"Gradient assignment warning: Mismatch in number of elements. Assigned {pointer}, flat_grad had {flat_grad.numel()}")
+             debugprint(f"GEM _assign_grads: 警告 - 指针最终位置 {pointer} 与扁平梯度大小 {flat_grad.numel()} 不匹配") # Debug print for final size mismatch
 
     def _project_gem_qp(self, g_current: torch.Tensor, memory_grads: List[torch.Tensor], max_iter: int = 15) -> torch.Tensor:
         """
@@ -218,37 +272,51 @@ class GEMSeq2SeqTrainer(CustomSeq2SeqTrainer):
         Returns:
             The projected gradient g'.
         """
+        debugprint(f"GEM _project_gem_qp: 方法入口, 当前梯度形状: {g_current.shape}, 记忆梯度数量: {len(memory_grads)}, 优化器最大迭代次数: {max_iter}") # Debug print at method start
         g_current = g_current.detach() # Ensure we don't modify the original grad tensor directly
         # Initialize the projected gradient as a parameter, starting from the current gradient
         g_proj = torch.nn.Parameter(g_current.clone(), requires_grad=True)
+        debugprint(f"GEM _project_gem_qp: 初始化投影梯度参数 (g_proj), 初始值来自 g_current, 形状: {g_proj.shape}") # Debug print after initializing g_proj
         
         # Use LBFGS optimizer on the projected gradient parameter
         optimizer = torch.optim.LBFGS([g_proj], max_iter=max_iter, line_search_fn="strong_wolfe")
+        debugprint(f"GEM _project_gem_qp: 初始化 LBFGS 优化器, max_iter={max_iter}") # Debug print after optimizer init
         
         # Get the penalty strength from the instance variable
         penalty_strength = self.gem_memory_strength
+        debugprint(f"GEM _project_gem_qp: 使用的惩罚强度 (gem_memory_strength): {penalty_strength}") # Debug print for penalty strength
         
         # Define the closure for the optimizer
         def closure():
+            debugprint("GEM _project_gem_qp closure: 开始计算损失和梯度") # Debug print at closure start
             optimizer.zero_grad()
             # Primary objective: minimize distance to original gradient
             loss = 0.5 * torch.norm(g_proj - g_current) ** 2
+            debugprint(f"GEM _project_gem_qp closure: 基础距离损失 ||g' - g_current||^2 / 2: {loss.item()}") # Debug print for base loss
             
             # Constraint penalty: add penalty if dot product is negative
-            for g_mem in memory_grads:
+            for i, g_mem in enumerate(memory_grads):
                 # Ensure memory gradient is detached and on the correct device
                 g_mem_detached = g_mem.detach().to(g_proj.device)
                 dot_prod = torch.dot(g_proj, g_mem_detached)
+                debugprint(f"GEM _project_gem_qp closure: 计算与第 {i} 个记忆梯度的点积: {dot_prod.item()}") # Debug print for dot product in closure
                 # Only apply penalty if the constraint is violated (dot_prod < 0)
                 if dot_prod < 0:
+                    penalty = -penalty_strength * dot_prod
+                    debugprint(f"GEM _project_gem_qp closure: 点积 < 0, 添加惩罚: {penalty.item()} (强度: {penalty_strength})") # Debug print for applied penalty
                     # Add penalty proportional to the violation magnitude
-                    loss = loss - penalty_strength * dot_prod # Maximize dot product towards >= 0
+                    loss = loss + penalty # Maximize dot product towards >= 0 (original paper minimizes -dot, so equivalent to adding -strength * dot when dot < 0)
                     
+            debugprint(f"GEM _project_gem_qp closure: 添加惩罚后的总损失: {loss.item()}") # Debug print for total loss in closure
             loss.backward()
+            debugprint("GEM _project_gem_qp closure: loss.backward() 完成") # Debug print after backward in closure
             return loss
 
         # Perform the optimization
+        debugprint("GEM _project_gem_qp: 开始执行 optimizer.step(closure)") # Debug print before optimizer step
         optimizer.step(closure)
+        debugprint("GEM _project_gem_qp: optimizer.step(closure) 完成") # Debug print after optimizer step
         
         # Return the optimized projected gradient, detached from computation graph
+        debugprint(f"GEM _project_gem_qp: 方法出口, 返回优化后的投影梯度, 形状: {g_proj.detach().shape}") # Debug print at method exit
         return g_proj.detach()

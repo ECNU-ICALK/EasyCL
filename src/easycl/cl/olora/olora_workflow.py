@@ -13,6 +13,8 @@ from .olora import OLoRA
 from .olora_trainer import OLoRATrainer
 from llamafactory.hparams import DataArguments, FinetuningArguments, GeneratingArguments, ModelArguments
 from easycl.hparams import CLFinetuningArguments
+def debugprint(*args, **kwargs):
+    pass
 
 
 if TYPE_CHECKING:
@@ -34,6 +36,7 @@ def run_sft_olora(
     """
     The main function to run O-LoRA fine-tuning.
     """
+    debugprint(f"run_sft_olora: 开始运行，传入的 cl_finetuning_args: {cl_finetuning_args}")
     tokenizer_module = load_tokenizer(model_args)
     tokenizer = tokenizer_module["tokenizer"]
     template = get_template_and_fix_tokenizer(tokenizer, data_args)
@@ -97,6 +100,13 @@ def run_sft_olora(
         logger.info(f"- Orthogonal lambda: {cl_finetuning_args.orthogonal_lambda}")
         logger.info(f"- L2 lambda: {cl_finetuning_args.l2_lambda}")
         logger.info(f"- History path: {cl_finetuning_args.olora_history_path}")
+        debugprint(f"run_sft_olora: O-LoRA 已启用，参数:")
+        debugprint(f"  - current_task_id: {cl_finetuning_args.current_task_id}")
+        debugprint(f"  - orthogonal_lambda: {cl_finetuning_args.orthogonal_lambda}")
+        debugprint(f"  - l2_lambda: {cl_finetuning_args.l2_lambda}")
+        debugprint(f"  - oloara_history_path: {cl_finetuning_args.olora_history_path}")
+    else:
+        debugprint("run_sft_olora: O-LoRA 未启用")
 
     # Initialize our Trainer
     trainer = OLoRATrainer(
@@ -125,14 +135,19 @@ def run_sft_olora(
             device=training_args.device.type if hasattr(training_args.device, "type") else training_args.device,
             prev_task_id=cl_finetuning_args.prev_task_id
         )
+        debugprint(f"run_sft_olora: OLoRA 实例已创建。传入的 prev_task_id: {cl_finetuning_args.prev_task_id}")
         
         # Load previous task's adapter parameters
-        if olora.load_prev_adapter(cl_finetuning_args.prev_task_id):
+        load_success = olora.load_prev_adapter(cl_finetuning_args.prev_task_id)
+        debugprint(f"run_sft_olora: 调用 olora.load_prev_adapter({cl_finetuning_args.prev_task_id}) 结果: {load_success}")
+        if load_success:
             logger.info(f"Successfully loaded previous task adapter: {cl_finetuning_args.prev_task_id}")
         
         # Important: Set up adapters to enable orthogonal constraints
         current_adapter_name = "current"  # We use fixed name "current" for current task
-        if olora.setup_adapters(current_adapter_name):
+        setup_success = olora.setup_adapters(current_adapter_name)
+        debugprint(f"run_sft_olora: 调用 olora.setup_adapters('{current_adapter_name}') 结果: {setup_success}")
+        if setup_success:
             logger.info(f"Successfully set up O-LoRA adapters with current adapter: {current_adapter_name}")
         else:
             logger.warning("Failed to set up O-LoRA adapters, orthogonal loss may not be computed correctly")
@@ -150,6 +165,7 @@ def run_sft_olora(
             task_name = os.path.splitext(os.path.basename(last_dataset))[0].upper()
             cl_finetuning_args.current_task_id = task_name
             logger.info(f"Extracted current task name: {task_name}")
+            debugprint(f"run_sft_olora: 从数据集提取的任务名: {task_name}")
         
         train_result = trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
         trainer.save_model()
@@ -163,17 +179,26 @@ def run_sft_olora(
             if hasattr(trainer, "olora"):
                 orthogonal_loss = trainer.olora.compute_orthogonal_loss().item()
                 l2_loss = trainer.olora.compute_l2_loss().item()
-                train_result.metrics["orthogonal_loss"] = orthogonal_loss
-                train_result.metrics["l2_loss"] = l2_loss
+                debugprint(f"run_sft_olora: 训练后 metrics 中的 orthogonal_loss: {train_result.metrics.get('orthogonal_loss', '未找到')}")
+                debugprint(f"run_sft_olora: 训练后 metrics 中的 l2_loss: {train_result.metrics.get('l2_loss', '未找到')}")
+                # Adding them here if not already added by trainer.compute_loss logging hook
+                if "orthogonal_loss" not in train_result.metrics:
+                  train_result.metrics["orthogonal_loss"] = orthogonal_loss
+                if "l2_loss" not in train_result.metrics:
+                  train_result.metrics["l2_loss"] = l2_loss
+
                 logger.info(f"Final O-LoRA losses:")
                 logger.info(f"- Orthogonal loss: {orthogonal_loss:.4f}")
                 logger.info(f"- L2 loss: {l2_loss:.4f}")
             else:
                 logger.warning("O-LoRA was enabled but trainer.olora is not found!")
+                debugprint("run_sft_olora: O-LoRA 启用但 trainer.olora 未找到!")
 
         if cl_finetuning_args.use_olora:
             # Save final merged adapter after training
-            trainer.olora.save_merged_adapter(cl_finetuning_args.current_task_id)
+            debugprint(f"run_sft_olora: 准备保存合并后的 adapter，任务 ID: {cl_finetuning_args.current_task_id}")
+            save_merged_success = trainer.olora.save_merged_adapter(cl_finetuning_args.current_task_id)
+            debugprint(f"run_sft_olora: 保存合并后的 adapter 结果: {save_merged_success}")
             
             # Record O-LoRA related metrics
             if "orthogonal_loss" in train_result.metrics:

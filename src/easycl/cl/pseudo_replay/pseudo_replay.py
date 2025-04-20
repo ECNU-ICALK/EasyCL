@@ -82,23 +82,146 @@ class PseudoReplay:
         
         return base_model, tokenizer
     
-    def get_few_shot_examples(self, dataset, num_shots=None):
+    def _find_data_file(self, dataset_name: str, split_type: str = "train") -> Optional[str]:
         """
-        Randomly select few-shot examples from dataset
+        Finds the data file path for a given dataset name and split type using dataset_info.json.
+        Adapted from CLEvalEvaluator._find_data_file logic.
+
+        Args:
+            dataset_name: The name of the dataset (e.g., "alpaca_gpt4_en").
+            split_type: The type of split required (usually "train").
+
+        Returns:
+            The absolute path to the data file, or None if not found or error occurs.
+        """
+        dataset_dir = self.data_args.dataset_dir
+        dataset_info = None
+        info_path = None
+        base_dir_for_file = None # Directory where dataset_info.json was found
+
+        # 1. Locate dataset_info.json
+        potential_paths = [dataset_dir, os.path.join(os.getcwd(), "data")]
+        for data_dir_path in potential_paths:
+            current_info_path = os.path.join(data_dir_path, "dataset_info.json")
+            if os.path.exists(current_info_path):
+                info_path = current_info_path
+                base_dir_for_file = data_dir_path # Remember the base dir
+                logger.debug(f"Found dataset_info.json at: {info_path}") # English log
+                break
+
+        if not info_path:
+            logger.warning_rank0(f"dataset_info.json not found in dataset_dir '{dataset_dir}' or fallback './data'. Cannot find raw file for few-shot examples.") # English log
+            return None
+
+        # 2. Load dataset_info.json
+        try:
+            with open(info_path, "r", encoding="utf-8") as f:
+                dataset_info = json.load(f)
+        except Exception as e:
+            logger.error_rank0(f"Failed to load or parse dataset_info.json from {info_path}: {e}. Cannot find raw file for few-shot examples.") # English log
+            return None
+
+        # 3. Find matching entry
+        file_name = None
+        # High priority: Check for key like "dataset_name_split"
+        key_high_priority = f"{dataset_name}_{split_type}"
+        if key_high_priority in dataset_info:
+            entry = dataset_info[key_high_priority]
+            if "file_name" in entry:
+                file_name = entry["file_name"]
+                logger.debug(f"Found high-priority match: key='{key_high_priority}', file_name='{file_name}'") # English log
+
+        # Low priority: Check for key "dataset_name" and matching "split" field
+        if file_name is None and dataset_name in dataset_info:
+            entry = dataset_info[dataset_name]
+            if "file_name" in entry and entry.get("split") == split_type:
+                file_name = entry["file_name"]
+                logger.debug(f"Found low-priority match: key='{dataset_name}', split='{split_type}', file_name='{file_name}'") # English log
+
+        if not file_name:
+            logger.warning_rank0(f"No matching entry with 'file_name' found in {info_path} for dataset '{dataset_name}' and split '{split_type}'. Cannot load few-shot examples.") # English log
+            return None
+
+        # 4. Construct and validate path (relative to the directory where dataset_info.json was found)
+        full_path = os.path.join(base_dir_for_file, file_name)
+        if os.path.exists(full_path):
+            logger.debug(f"Resolved data file path: {full_path}") # English log
+            return full_path
+        else:
+            # Try fallback ./data if dataset_info was found in dataset_dir and that wasn't ./data
+            fallback_data_dir = os.path.join(os.getcwd(), "data")
+            if os.path.abspath(base_dir_for_file) != os.path.abspath(fallback_data_dir):
+                 fallback_path = os.path.join(fallback_data_dir, file_name)
+                 if os.path.exists(fallback_path):
+                     logger.warning_rank0(f"File '{file_name}' not found in '{base_dir_for_file}', but found in fallback './data'. Using fallback path: {fallback_path}") # English log
+                     return fallback_path
+
+            logger.error_rank0(f"Data file '{file_name}' specified in {info_path} not found at expected path: {full_path} (and fallback './data' if applicable). Cannot load few-shot examples.") # English log
+            return None
+
+    def get_few_shot_examples(self, num_shots=None):
+        """
+        Randomly select few-shot examples by reading the raw dataset file.
+        Uses dataset_info.json to find the 'train' split file.
         """
         if num_shots is None:
             num_shots = self.num_shots
         
+        # Determine the dataset name (use the first one if multiple are specified)
+        if isinstance(self.data_args.dataset, list) and self.data_args.dataset:
+            dataset_name = self.data_args.dataset[0]
+        elif isinstance(self.data_args.dataset, str):
+            dataset_name = self.data_args.dataset
+        else:
+            logger.warning_rank0("No dataset name found in data_args. Cannot load few-shot examples.") # English log
+            return []
+
+        logger.info_rank0(f"Attempting to load raw few-shot examples for dataset '{dataset_name}'") # English log
+
+        # Find the raw data file path for the 'train' split
+        data_file_path = self._find_data_file(dataset_name=dataset_name, split_type="train")
+
+        if not data_file_path:
+            logger.warning_rank0(f"Could not find raw data file for dataset '{dataset_name}'. Returning empty list for few-shot examples.") # English log
+            return []
+
+        # Load the raw data from the file
+        try:
+            with open(data_file_path, "r", encoding="utf-8") as f:
+                # Handle both JSON and JSON Lines formats
+                if data_file_path.endswith(".jsonl"):
+                    raw_data = [json.loads(line) for line in f if line.strip()]
+                elif data_file_path.endswith(".json"):
+                    raw_data = json.load(f)
+                    if not isinstance(raw_data, list): # Ensure it's a list of samples
+                         logger.warning_rank0(f"Loaded JSON data from '{data_file_path}' is not a list. Cannot sample few-shot examples.")
+                         return []
+                else:
+                    logger.warning_rank0(f"Unsupported file extension for raw data file: {data_file_path}. Expected .json or .jsonl. Returning empty list.")
+                    return []
+            logger.info_rank0(f"Successfully loaded {len(raw_data)} raw samples from {data_file_path}") # English log
+        except Exception as e:
+            logger.error_rank0(f"Error reading or parsing raw data file {data_file_path}: {e}") # English log
+            return []
+
         # Ensure dataset has enough samples
-        if len(dataset) < num_shots:
-            logger.warning_rank0(f"Dataset size ({len(dataset)}) is smaller than requested examples ({num_shots}), will use all samples")
-            num_shots = len(dataset)
-        
+        if not raw_data:
+             logger.warning_rank0(f"Raw data file '{data_file_path}' is empty. Cannot sample few-shot examples.")
+             return []
+             
+        if len(raw_data) < num_shots:
+            logger.warning_rank0(f"Raw dataset size ({len(raw_data)}) is smaller than requested examples ({num_shots}), will use all samples") # English log
+            num_shots = len(raw_data)
+
         # Randomly select samples
-        indices = random.sample(range(len(dataset)), num_shots)
-        examples = [dataset[i] for i in indices]
-        
-        return examples
+        try:
+            indices = random.sample(range(len(raw_data)), num_shots)
+            examples = [raw_data[i] for i in indices]
+            logger.info_rank0(f"Selected {len(examples)} few-shot examples for dataset '{dataset_name}'") # English log
+            return examples
+        except Exception as e:
+             logger.error_rank0(f"Error during random sampling from raw data: {e}") # English log
+             return []
     
     def construct_prompt(self, examples, template_type="alpaca"):
         """
@@ -152,7 +275,7 @@ class PseudoReplay:
         
         return instruction
     
-    def generate_pseudo_samples(self, dataset, num_samples=None):
+    def generate_pseudo_samples(self, num_samples=None):
         """
         Generate pseudo samples using base model
         """
@@ -161,12 +284,29 @@ class PseudoReplay:
             
         # Load base model
         base_model, tokenizer = self.setup_base_model()
-        
+        base_model = base_model.cuda()
+        tokenizer.padding_side = "left"
         # Select few-shot examples
-        few_shot_examples = self.get_few_shot_examples(dataset)
+        few_shot_examples = self.get_few_shot_examples()
         
-        # Construct prompt
-        prompt = self.construct_prompt(few_shot_examples)
+        # If no few-shot examples could be loaded, handle gracefully (e.g., generate without few-shot prompt)
+        if not few_shot_examples:
+             logger.warning_rank0("No few-shot examples loaded. Proceeding with generation without few-shot prompt.")
+             # Decide how to proceed: maybe use a generic prompt or raise an error
+             # For now, let's try generating without the examples part of the prompt.
+             # This might require adjusting construct_prompt or using a different prompt logic here.
+             # Option 1: Use a generic instruction if construct_prompt fails
+             prompt = "Instruction:" # Simplest fallback
+             # Option 2: Modify construct_prompt to handle empty examples (Return just "Instruction:")
+             # prompt = self.construct_prompt(few_shot_examples) # This might fail if examples is empty
+
+             # Let's assume construct_prompt can handle empty examples gracefully or modify it.
+             # For now, we will proceed, but this might need further adjustment
+             # depending on construct_prompt's behavior with empty
+
+        else:
+             # Construct prompt using the loaded few-shot examples
+             prompt = self.construct_prompt(few_shot_examples)
         
         # Set generation config
         generation_config = GenerationConfig(
@@ -182,7 +322,7 @@ class PseudoReplay:
         # Encode prompt
         inputs = tokenizer(prompt, return_tensors="pt")
         input_ids = inputs["input_ids"].to(base_model.device)
-        
+        attention_mask = inputs["attention_mask"].to(base_model.device)
         # Generate pseudo samples
         logger.info_rank0(f"Starting to generate {num_samples} pseudo samples")
         generated_texts = []
@@ -202,24 +342,46 @@ class PseudoReplay:
             with torch.no_grad():
                 outputs = base_model.generate(
                     input_ids=input_ids,
+                    attention_mask=attention_mask,
                     generation_config=generation_config,
+                    max_new_tokens=512,
                     num_return_sequences=current_batch_size,
                     return_dict_in_generate=True
                 )
             
             # Decode generated text
-            for j in range(current_batch_size):
-                if isinstance(outputs, dict) and "sequences" in outputs:
+            if isinstance(outputs, dict) and "sequences" in outputs:
+                 sequences = outputs.sequences
+                 # sequences shape: [current_batch_size, sequence_length]
+                 prompt_length = input_ids.shape[1]
+                 
+                 for j in range(sequences.shape[0]): # Iterate through batch dimension
                     # Only take newly generated tokens
-                    new_tokens = outputs.sequences[j][input_ids.shape[1]:]
-                    generated_text = tokenizer.decode(new_tokens, skip_special_tokens=True)
+                    new_tokens = sequences[j][prompt_length:]
+
                     
-                    # Process and add generated text to result list
-                    if generated_text:
-                        generated_texts.append(prompt + " " + generated_text)
-        
+                    # Use batch_decode for efficiency
+                    # generated_text = tokenizer.decode(new_tokens, skip_special_tokens=True)
+                    
+                    # Add generated text (including prompt initially for parsing logic) to result list
+                    # We will decode later or let the parser handle it if needed.
+                    # For now, just store the full sequence? Let's try decoding here.
+                    full_decoded_text = tokenizer.decode(sequences[j], skip_special_tokens=True)
+
+                    # Alternative: Decode only new tokens and prepend prompt
+                    # generated_part = tokenizer.decode(new_tokens, skip_special_tokens=True)
+                    # full_decoded_text = prompt + generated_part # Approximate, prompt decoding might differ slightly
+
+                    if full_decoded_text:
+                         generated_texts.append(full_decoded_text)
+   
         # Free GPU memory
         del base_model
+        del tokenizer
+        del inputs
+        del input_ids
+        del attention_mask
+        if 'outputs' in locals(): del outputs
         torch.cuda.empty_cache()
         
         # Parse generated text into structured pseudo samples

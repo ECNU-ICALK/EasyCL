@@ -21,6 +21,9 @@ import numpy as np
 import torch
 from transformers import Seq2SeqTrainer
 from typing_extensions import override
+def debugprint(*args, **kwargs):
+    pass
+
 
 from llamafactory.extras import logging
 from llamafactory.extras.constants import IGNORE_INDEX
@@ -65,6 +68,10 @@ class EWCSeq2SeqTrainer(Seq2SeqTrainer):
         self.cl_finetuning_args = cl_finetuning_args
         if gen_kwargs is not None:
             self._gen_kwargs = gen_kwargs
+
+        # --- Debug Print Start ---
+        debugprint(f"CL Finetuning Args in EWCSeq2SeqTrainer.__init__: {self.cl_finetuning_args}")
+        # --- Debug Print End ---
 
         if processor is not None:
             self.add_callback(SaveProcessorCallback(processor))
