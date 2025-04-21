@@ -8,6 +8,8 @@
 
 ##  Status Overview
 
+**Note:** This is currently a development version, so you may encounter some bugs. If you find a bug, please raise an issue or contact me via email: caiyuxuanuestc@hotmail.com or WeChat: damowangdongdong. Thank you very much!
+
 <details>
 <summary>🚧 <strong>Known Issues / Upcoming Features</strong></summary>
 
@@ -38,6 +40,7 @@
   - [Data Format](#data-format)
   - [Alpaca Format](#alpaca-format)
   - [Sharegpt Format](#sharegpt-format)
+  - [Dataset Requirements for Evaluation](#dataset-requirements-for-evaluation)
   - [Continuous Learning Evaluation](#continuous-learning-evaluation)
 - [Benchmark Adaptation](#benchmark-adaptation)
   - [Creating a Custom Benchmark](#creating-a-custom-benchmark)
@@ -194,6 +197,52 @@ For data in the above format, the *dataset description* in `dataset_info.json` s
 }
 ```
 
+#### Dataset Requirements for Evaluation 
+
+EasyCL's evaluation process relies on the `dataset_info.json` file to locate and load required datasets. When running evaluation commands with `--cl_tasks <task_name>` (e.g., `--cl_tasks my_eval_task`), the evaluator will:
+
+1. **Find Test Set**: The evaluator looks for entries matching `<task_name>_test` (e.g., `my_eval_task_test`) or entries with key `<task_name>` and `split` field set to `"test"` in `dataset_info.json`. **Test set is required for evaluation.**
+2. **Find Dev Set**: If `n_shot > 0` is set in evaluation parameters (for few-shot evaluation), the evaluator similarly looks for entries matching `<task_name>_dev` (e.g., `my_eval_task_dev`) or entries with `split` field set to `"dev"`. **Dev set is not required for zero-shot evaluation.**
+
+**Example:**
+
+Suppose your `dataset_info.json` contains:
+
+```json
+{
+  "my_eval_task_dev": {
+    "file_name": "my_data/my_eval_task_dev.json",
+    "split": "dev",
+    "columns": {
+        "prompt": "instruction",
+        "query": "input",
+        "response": "output"
+     }
+  },
+  "my_eval_task_test": {
+    "file_name": "my_data/my_eval_task_test.json",
+    "split": "test",
+    "columns": {
+        "prompt": "instruction",
+        "query": "input",
+        "response": "output"
+     }
+  }
+  // ... other datasets ...
+}
+```
+
+When you run `easycl-cli cl_workflow --mode eval_only --eval_params <your_eval_config>.yaml` with `--cl_tasks my_eval_task` specified in the config:
+* The evaluator will load `my_data/my_eval_task_test.json` as test set.
+* If `--n_shot 5` is also specified in the config, the evaluator will load `my_data/my_eval_task_dev.json` and use the first 5 samples as few-shot examples.
+
+**Important Notes:**
+* Ensure that you define corresponding `test` set entries in `dataset_info.json` for each task that needs evaluation, with correct `file_name`.
+* Define `dev` set entries if you need few-shot evaluation.
+* The `file_name` paths should be relative to the directory containing `dataset_info.json` or the `data` directory in project root. The evaluator will look in `task_dir` (if specified) or `./data` directory first.
+
+
+
 ### Continuous Learning Evaluation
 
 If you need to use continuous learning evaluation, you need to register dataset options in `dataset_options.json`. Here is an example:
@@ -206,6 +255,8 @@ If you need to use continuous learning evaluation, you need to register dataset 
 ```
 
 This configuration allows EasyCL to properly evaluate model performance on classification tasks during continuous learning.
+
+
 
 ## Benchmark Adaptation
 

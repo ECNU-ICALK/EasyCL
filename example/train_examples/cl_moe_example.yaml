@@ -49,3 +49,5 @@ resume_from_checkpoint: null
 
 # cl-MoE Specific Arguments
 use_cl_moe: true
+expert_num: 4
+top_k_experts: 2

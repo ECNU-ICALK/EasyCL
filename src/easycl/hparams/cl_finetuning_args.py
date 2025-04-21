@@ -232,7 +232,7 @@ class clMoEArguments(CommonCLFinetuningArguments):
     )
     
     top_k_experts: int = field(
-        default=8,
+        default=2,
         metadata={"help": "The number of top experts to select during statistics calculation."}
     )
 
