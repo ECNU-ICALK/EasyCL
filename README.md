@@ -228,7 +228,7 @@ Suppose your `dataset_info.json` contains:
         "response": "output"
      }
   }
-  // ... other datasets ...
+
 }
 ```
 
