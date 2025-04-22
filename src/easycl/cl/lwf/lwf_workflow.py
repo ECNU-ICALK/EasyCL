@@ -18,7 +18,8 @@ import os
 import copy
 from typing import TYPE_CHECKING, Optional
 import traceback
-from debugprint import debugprint
+def debugprint(*args, **kwargs):
+    pass
 from llamafactory.data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer
 from llamafactory.extras.constants import IGNORE_INDEX
 from llamafactory.extras.logging import get_logger
