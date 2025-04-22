@@ -19,7 +19,8 @@ import json
 import os
 from types import MethodType
 from typing import TYPE_CHECKING, Any, Optional, Union
-from debugprint import debugprint
+def debugprint(*args, **kwargs):
+    pass
 
 import numpy as np
 import torch
