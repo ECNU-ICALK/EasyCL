@@ -428,8 +428,6 @@ class CLFinetuningArguments(
         if self.use_lwf and not self.previous_task_model:
             raise ValueError("LWF requires previous task model for knowledge distillation.")
             
-        if self.use_replay and not self.previous_task_dataset:
-            raise ValueError("Experience Replay requires previous task dataset.")
             
         if self.use_ssr and not self.base_model_path:
             raise ValueError("SSR requires base model path for ICL generation.")
