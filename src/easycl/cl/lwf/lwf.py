@@ -4,7 +4,8 @@ from typing import Optional, Dict
 from llamafactory.extras.logging import get_logger
 from easycl.hparams import CLFinetuningArguments
 import traceback
-from debugprint import debugprint
+def debugprint(*args, **kwargs):
+    pass
 
 logger = get_logger(__name__)
 
