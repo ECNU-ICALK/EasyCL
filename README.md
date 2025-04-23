@@ -13,7 +13,9 @@
 <details>
 <summary>🚧 <strong>Known Issues / Upcoming Features</strong></summary>
 
-*   [TODO] Compare results of MoE-LoRA related methods with original implementations.
+*   [TODO] Update and adapt multi-GPU logic.
+*   [TODO] Address unidentified LLaMAFactory bug triggered by GEM in multimodal scenarios.
+*   [TODO] Update and simplify EMA saving logic in ILoRA.
 *   [Feature] Planning to add support for [New Method/Feature].
 *   Optimizing memory usage during [Specific Process].
 
