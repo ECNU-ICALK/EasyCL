@@ -2,11 +2,12 @@ import os
 import json
 import copy
 import random
+import io
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from transformers import (
-    AutoTokenizer, 
+    AutoTokenizer,
     AutoModelForCausalLM,
     GenerationConfig
 )
@@ -22,13 +23,72 @@ from easycl.hparams import CLFinetuningArguments
 
 logger = get_logger(__name__)
 
+# 分布式训练辅助函数
+def is_distributed():
+    """检查是否在分布式环境中运行"""
+    return torch.distributed.is_available() and torch.distributed.is_initialized()
+
+def get_rank():
+    """获取当前进程在分布式训练中的rank，非分布式环境返回0"""
+    if is_distributed():
+        return torch.distributed.get_rank()
+    return 0
+
+def is_main_process():
+    """检查是否为主进程（rank 0）"""
+    return get_rank() == 0
+
+def broadcast_object(obj, src=0):
+    """
+    在分布式环境中广播任意Python对象
+
+    Args:
+        obj: 要广播的对象
+        src: 源进程的rank
+
+    Returns:
+        广播后的对象
+    """
+    if not is_distributed():
+        return obj
+
+    rank = get_rank()
+    logger.debug(f"开始广播对象，源进程: {src}")
+
+    # 序列化对象
+    buffer = io.BytesIO()
+    torch.save(obj, buffer)
+    data = buffer.getvalue()
+
+    # 广播数据大小
+    size = torch.tensor([len(data)], dtype=torch.long, device="cuda" if torch.cuda.is_available() else "cpu")
+    torch.distributed.broadcast(size, src=src)
+
+    # 广播数据
+    if rank == src:
+        # 源进程发送数据
+        tensor = torch.ByteTensor(list(data)).to("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        # 其他进程接收数据
+        tensor = torch.empty(size.item(), dtype=torch.uint8, device="cuda" if torch.cuda.is_available() else "cpu")
+
+    torch.distributed.broadcast(tensor, src=src)
+
+    # 反序列化对象
+    if rank != src:
+        buffer = io.BytesIO(tensor.cpu().numpy().tobytes())
+        obj = torch.load(buffer)
+
+    logger.debug(f"广播对象完成")
+    return obj
+
 class PseudoReplay:
     """
     Pseudo Replay Implementation
-    
+
     A simplified version of SSR (Selective Synthetic Replay) method for continual learning
     """
-    
+
     def __init__(
         self,
         model_args: ModelArguments,
@@ -41,7 +101,7 @@ class PseudoReplay:
         self.data_args = data_args
         self.finetuning_args = finetuning_args
         self.cl_finetuning_args = cl_finetuning_args
-        
+
         # Pseudo Replay specific parameters
         self.use_pseudo_replay = cl_finetuning_args.use_pseudo_replay
         self.base_model_path = cl_finetuning_args.base_model_path
@@ -49,39 +109,39 @@ class PseudoReplay:
         self.generation_temperature = cl_finetuning_args.generation_temperature
         self.pseudo_samples_dir = cl_finetuning_args.pseudo_samples_dir
         self.num_shots = cl_finetuning_args.num_shots
-    
+
     def setup_base_model(self) -> Tuple[AutoModelForCausalLM, AutoTokenizer]:
         """
         Load base model for pseudo sample generation
         """
         # Create a copy of model arguments
         base_model_args = copy.deepcopy(self.model_args)
-        
+
         # Use specified base model path
         if self.base_model_path:
             base_model_args.model_name_or_path = self.base_model_path
-        
+
         # Remove all adapters, use pure base model for generation
         base_model_args.adapter_name_or_path = None
-        
+
         # Load tokenizer
         tokenizer_module = load_tokenizer(base_model_args)
         tokenizer = tokenizer_module["tokenizer"]
-        
+
         # Load base model - no training, disable adapters
         temp_finetuning_args = copy.deepcopy(self.finetuning_args)
         temp_finetuning_args.finetuning_type = "lora"  # Use lora type but don't load adapters
         base_model = load_model(
-            tokenizer, 
-            base_model_args, 
+            tokenizer,
+            base_model_args,
             temp_finetuning_args,
             is_trainable=False
         )
-        
+
         logger.info_rank0(f"Loaded Pseudo Replay base model from: {base_model_args.model_name_or_path}")
-        
+
         return base_model, tokenizer
-    
+
     def _find_data_file(self, dataset_name: str, split_type: str = "train") -> Optional[str]:
         """
         Finds the data file path for a given dataset name and split type using dataset_info.json.
@@ -166,7 +226,7 @@ class PseudoReplay:
         """
         if num_shots is None:
             num_shots = self.num_shots
-        
+
         # Determine the dataset name (use the first one if multiple are specified)
         if isinstance(self.data_args.dataset, list) and self.data_args.dataset:
             dataset_name = self.data_args.dataset[0]
@@ -208,7 +268,7 @@ class PseudoReplay:
         if not raw_data:
              logger.warning_rank0(f"Raw data file '{data_file_path}' is empty. Cannot sample few-shot examples.")
              return []
-             
+
         if len(raw_data) < num_shots:
             logger.warning_rank0(f"Raw dataset size ({len(raw_data)}) is smaller than requested examples ({num_shots}), will use all samples") # English log
             num_shots = len(raw_data)
@@ -222,20 +282,20 @@ class PseudoReplay:
         except Exception as e:
              logger.error_rank0(f"Error during random sampling from raw data: {e}") # English log
              return []
-    
+
     def construct_prompt(self, examples, template_type="alpaca"):
         """
         Construct few-shot prompt
         """
         instruction = 'Create task samples following examples below.\n\n'
-        
+
         for example in examples:
             # Ensure compatibility with different dataset formats
             if "instruction" in example and "input" in example and "output" in example:
                 # Alpaca format
                 input_text = example["input"]
                 input_text = "<noinput>" if input_text.lower() == "" else input_text
-                
+
                 instruction += (
                     f"Instruction: {example['instruction']}\n" +
                     f"Input: {input_text}\n" +
@@ -245,13 +305,13 @@ class PseudoReplay:
                 # ShareGPT format
                 user_message = ""
                 assistant_message = ""
-                
+
                 for msg in example["messages"]:
                     if msg["role"] == "user":
                         user_message = msg["content"]
                     elif msg["role"] == "assistant":
                         assistant_message = msg["content"]
-                
+
                 instruction += (
                     f"Instruction: Answer the following query\n" +
                     f"Input: {user_message}\n" +
@@ -270,25 +330,36 @@ class PseudoReplay:
                         elif "output" not in locals():
                             instruction += f"Output: {value}\n\n"
                             break
-        
+
         instruction += 'Instruction:'
-        
+
         return instruction
-    
+
     def generate_pseudo_samples(self, num_samples=None):
         """
         Generate pseudo samples using base model
         """
         if num_samples is None:
             num_samples = self.num_samples_per_task
-            
+
+        # 只在rank 0上生成伪样本
+        if is_distributed() and not is_main_process():
+            # 非主进程等待主进程完成生成
+            logger.info(f"进程 rank={get_rank()} 等待主进程生成伪样本")
+            torch.distributed.barrier()
+            # 从主进程接收生成的伪样本
+            pseudo_samples = broadcast_object(None, src=0)
+            logger.info(f"进程 rank={get_rank()} 接收到 {len(pseudo_samples)} 个伪样本")
+            return pseudo_samples
+
+        # 主进程或非分布式环境下生成伪样本
         # Load base model
         base_model, tokenizer = self.setup_base_model()
         base_model = base_model.cuda()
         tokenizer.padding_side = "left"
         # Select few-shot examples
         few_shot_examples = self.get_few_shot_examples()
-        
+
         # If no few-shot examples could be loaded, handle gracefully (e.g., generate without few-shot prompt)
         if not few_shot_examples:
              logger.warning_rank0("No few-shot examples loaded. Proceeding with generation without few-shot prompt.")
@@ -307,7 +378,7 @@ class PseudoReplay:
         else:
              # Construct prompt using the loaded few-shot examples
              prompt = self.construct_prompt(few_shot_examples)
-        
+
         # Set generation config
         generation_config = GenerationConfig(
             temperature=self.generation_temperature,
@@ -318,7 +389,7 @@ class PseudoReplay:
             pad_token_id=tokenizer.pad_token_id,
             eos_token_id=tokenizer.eos_token_id
         )
-        
+
         # Encode prompt
         inputs = tokenizer(prompt, return_tensors="pt")
         input_ids = inputs["input_ids"].to(base_model.device)
@@ -326,18 +397,18 @@ class PseudoReplay:
         # Generate pseudo samples
         logger.info_rank0(f"Starting to generate {num_samples} pseudo samples")
         generated_texts = []
-        
+
         # Generate in batches to avoid GPU memory issues
         batch_size = min(5, num_samples)
         num_batches = (num_samples + batch_size - 1) // batch_size
-        
+
         for i in range(num_batches):
             current_batch_size = min(batch_size, num_samples - i*batch_size)
             if current_batch_size <= 0:
                 break
-                
+
             logger.info_rank0(f"Generating pseudo sample batch {i+1}/{num_batches}")
-            
+
             # Generate multiple samples
             with torch.no_grad():
                 outputs = base_model.generate(
@@ -348,21 +419,21 @@ class PseudoReplay:
                     num_return_sequences=current_batch_size,
                     return_dict_in_generate=True
                 )
-            
+
             # Decode generated text
             if isinstance(outputs, dict) and "sequences" in outputs:
                  sequences = outputs.sequences
                  # sequences shape: [current_batch_size, sequence_length]
                  prompt_length = input_ids.shape[1]
-                 
+
                  for j in range(sequences.shape[0]): # Iterate through batch dimension
                     # Only take newly generated tokens
                     new_tokens = sequences[j][prompt_length:]
 
-                    
+
                     # Use batch_decode for efficiency
                     # generated_text = tokenizer.decode(new_tokens, skip_special_tokens=True)
-                    
+
                     # Add generated text (including prompt initially for parsing logic) to result list
                     # We will decode later or let the parser handle it if needed.
                     # For now, just store the full sequence? Let's try decoding here.
@@ -374,7 +445,7 @@ class PseudoReplay:
 
                     if full_decoded_text:
                          generated_texts.append(full_decoded_text)
-   
+
         # Free GPU memory
         del base_model
         del tokenizer
@@ -383,93 +454,117 @@ class PseudoReplay:
         del attention_mask
         if 'outputs' in locals(): del outputs
         torch.cuda.empty_cache()
-        
+
         # Parse generated text into structured pseudo samples
         pseudo_samples = self.parse_generated_texts(generated_texts)
-        
+
         logger.info_rank0(f"Successfully generated {len(pseudo_samples)} valid pseudo samples")
-        
+
+        # 在分布式环境中，广播生成的伪样本到所有进程
+        if is_distributed():
+            # 主进程等待其他进程准备好接收
+            logger.info(f"主进程 (rank={get_rank()}) 准备广播 {len(pseudo_samples)} 个伪样本")
+            torch.distributed.barrier()
+            # 使用自定义的broadcast_object函数广播伪样本
+            pseudo_samples = broadcast_object(pseudo_samples, src=0)
+            logger.info(f"主进程 (rank={get_rank()}) 完成伪样本广播")
+
         return pseudo_samples
-    
+
     def parse_generated_texts(self, generated_texts):
         """
         Parse generated text into structured pseudo samples
         """
         parsed_samples = []
-        
+
         for text in generated_texts:
             try:
                 # Split generated text to extract instruction, input and output
                 parts = text.split("Output:", 1)
                 if len(parts) != 2:
                     continue
-                    
+
                 output = parts[1].strip()
                 remaining = parts[0].strip()
-                
+
                 # Split remaining part for input
                 parts = remaining.split("Input:", 1)
                 if len(parts) != 2:
                     continue
-                    
+
                 input_text = parts[1].strip()
                 instruction_parts = parts[0].strip().split("Instruction:", 1)
-                
+
                 if len(instruction_parts) != 2:
                     continue
-                    
+
                 instruction = instruction_parts[1].strip()
-                
+
                 # Handle special tokens
                 if input_text == "<noinput>":
                     input_text = ""
-                
+
                 # Validate parsed fields
                 if not instruction:
                     continue
-                
+
                 # Create structured pseudo sample
                 sample = {
                     "instruction": instruction,
                     "input": input_text,
                     "output": output
                 }
-                
+
                 # Add to result list
                 parsed_samples.append(sample)
-                
+
             except Exception as e:
                 logger.debug(f"Error parsing pseudo sample: {e}")
                 continue
-        
+
         # Ensure diversity of pseudo samples, remove exact duplicates
         unique_samples = []
         seen = set()
-        
+
         for sample in parsed_samples:
             # Use string representation of sample as unique identifier
             sample_str = json.dumps(sample, sort_keys=True)
             if sample_str not in seen:
                 seen.add(sample_str)
                 unique_samples.append(sample)
-        
+
         return unique_samples
-    
+
     def save_pseudo_samples(self, samples, task_id, prev_task_id=None):
         """
         Save pseudo samples to specified directory
+        在分布式环境中，只在rank 0进程上执行保存
         """
+        rank = get_rank()
+        logger.info(f"进程 rank={rank} save_pseudo_samples 开始，当前任务ID: {task_id}, 上一任务ID: {prev_task_id}, 待保存样本数: {len(samples)}")
+
+        # 只在主进程或非分布式环境中执行文件操作
+        if is_distributed() and not is_main_process():
+            # 非主进程等待主进程完成保存
+            logger.info(f"非主进程 (rank={rank}) 等待主进程保存伪样本")
+            torch.distributed.barrier()
+            # 从主进程接收保存路径
+            task_dir = broadcast_object(None, src=0)
+            logger.info(f"非主进程 (rank={rank}) 接收到伪样本保存路径: {task_dir}")
+            return task_dir
+
+        # 主进程或非分布式环境下保存伪样本
         # Build save path
         output_dir = self.pseudo_samples_dir
         if not os.path.isabs(output_dir):
             # If relative path, relative to current working directory
             output_dir = os.path.join(os.getcwd(), output_dir)
-            
+
         os.makedirs(output_dir, exist_ok=True)
-        
+
         task_dir = os.path.join(output_dir, task_id)
         os.makedirs(task_dir, exist_ok=True)
-        
+
         # If previous task's pseudo samples exist, load them first
         prev_samples = []
         if prev_task_id and prev_task_id != task_id:
@@ -485,20 +580,20 @@ class PseudoReplay:
                                 prev_samples.extend(prev_data)
                         except Exception as e:
                             logger.warning_rank0(f"Error loading previous task's pseudo samples: {e}")
-        
+
         # Merge current task's generated pseudo samples with historical ones
         all_samples = samples + prev_samples
-        
+
         # Save merged pseudo samples
         pseudo_file_name = f"pseudo_{task_id}.json"
         pseudo_file_path = os.path.join(task_dir, pseudo_file_name)
-        
+
         with open(pseudo_file_path, 'w', encoding='utf-8') as f:
             json.dump(all_samples, f, ensure_ascii=False, indent=2)
-        
+
         # Get format information from original dataset
         dataset_format = self.get_dataset_format()
-        
+
         # Build dataset registration information
         dataset_info = {
             f"pseudo_{task_id}": {
@@ -507,38 +602,47 @@ class PseudoReplay:
                 "split": "train"
             }
         }
-        
+
         # Add other format-specific configurations to registration info
         if "columns" in dataset_format:
             dataset_info[f"pseudo_{task_id}"]["columns"] = dataset_format["columns"]
         if "tags" in dataset_format:
             dataset_info[f"pseudo_{task_id}"]["tags"] = dataset_format["tags"]
-        
+
         # Save dataset registration information
         dataset_info_path = os.path.join(task_dir, "dataset_info.json")
         with open(dataset_info_path, 'w', encoding='utf-8') as f:
             json.dump(dataset_info, f, ensure_ascii=False, indent=2)
-            
+
         logger.info_rank0(f"Saved merged pseudo samples from current and historical tasks to {pseudo_file_path}")
         logger.info_rank0(f"Current task pseudo samples: {len(samples)}")
         logger.info_rank0(f"Historical task pseudo samples: {len(prev_samples)}")
         logger.info_rank0(f"Total pseudo samples: {len(all_samples)}")
-        
+
+        # 在分布式环境中，广播保存路径到所有进程
+        if is_distributed():
+            # 主进程等待其他进程准备好接收
+            logger.info(f"主进程 (rank={rank}) 准备广播伪样本保存路径: {task_dir}")
+            torch.distributed.barrier()
+            # 广播保存路径
+            task_dir = broadcast_object(task_dir, src=0)
+            logger.info(f"主进程 (rank={rank}) 完成伪样本保存路径广播")
+
         return task_dir
-    
+
     def get_dataset_format(self):
         """
         Get format information from original dataset for creating compatible dataset_info.json
         """
         try:
             from llamafactory.data.parser import get_dataset_list
-            
+
             # Get current task's dataset information
             dataset_list = get_dataset_list(self.data_args.dataset, self.data_args.dataset_dir)
             if not dataset_list:
                 # Use default alpaca format
                 return {"formatting": "alpaca", "split": "train"}
-            
+
             # Assume we use the first dataset as reference
             dataset_info_path = os.path.join(self.data_args.dataset_dir, "dataset_info.json")
             if os.path.exists(dataset_info_path):
@@ -551,22 +655,22 @@ class PseudoReplay:
                             # Extract format information for this dataset
                             format_info = {}
                             src_info = dataset_info[dataset_name]
-                            
+
                             # Copy basic format information
                             format_info["formatting"] = src_info.get("formatting", "alpaca")
                             format_info["split"] = src_info.get("split", "train")
-                            
+
                             # Copy additional format information
                             if "columns" in src_info:
                                 format_info["columns"] = src_info["columns"]
                             if "tags" in src_info:
                                 format_info["tags"] = src_info["tags"]
-                            
+
                             return format_info
                 except Exception as e:
                     logger.warning_rank0(f"Error reading dataset_info.json: {e}")
         except Exception as e:
             logger.warning_rank0(f"Error getting dataset format information: {e}")
-        
+
         # If unable to get format information, return default format
         return {"formatting": "alpaca", "split": "train"}

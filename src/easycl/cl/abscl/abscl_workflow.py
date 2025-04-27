@@ -4,8 +4,9 @@ import torch
 import gc
 import random
 from typing import TYPE_CHECKING, Optional
-# from debugprint import debugprint
-
+def debugprint(*args, **kwargs):
+    pass
+from accelerate.state import AcceleratorState, PartialState
 from llamafactory.data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer
 from llamafactory.data.data_utils import merge_dataset
 from llamafactory.extras.constants import IGNORE_INDEX
@@ -18,6 +19,11 @@ from llamafactory.train.sft.metric import ComputeAccuracy, ComputeSimilarity, ev
 from llamafactory.train.sft.trainer import CustomSeq2SeqTrainer
 from .abscl_trainer import ABSCLTrainer
 from .abscl import extract_feature_statistics  # Import feature extraction function
+from easycl.cl.distributed_utils import (
+    is_distributed, is_main_process, get_rank, get_world_size,
+    get_deepspeed_zero_stage, is_deepspeed_zero3_enabled,
+    gather_parameters, all_reduce_tensor, broadcast_object
+)
 
 
 if TYPE_CHECKING:
@@ -42,23 +48,23 @@ def run_sft_abscl(
     Run sequence-to-sequence fine-tuning using the ABSCL method.
     This method trains two adapters: a shared adapter and a task-specific adapter.
     """
-    # debugprint("Entering run_sft_abscl function")
-    # debugprint(f"Incoming cl_finetuning_args: {cl_finetuning_args}")
+    debugprint("进入ABSCL微调运行函数")
+    debugprint(f"传入的CL微调参数: {cl_finetuning_args}")
 
     # Load tokenizer and dataset (only need once)
     tokenizer_module = load_tokenizer(model_args)
     tokenizer = tokenizer_module["tokenizer"]
     template = get_template_and_fix_tokenizer(tokenizer, data_args)
-    
+
     # ============= Prepare training dataset for shared adapter using replay strategy =============
     if training_args.do_train:
-        # debugprint("\n" + "*" * 80)
-        # debugprint("*" + " " * 78 + "*")
-        # debugprint("*" + " " * 25 + "Preparing shared adapter dataset using replay strategy" + " " * 25 + "*") # 使用英文
-        # debugprint("*" + " " * 78 + "*")
-        # debugprint("*" + f" Replay Ratio: {cl_finetuning_args.replay_ratio}" + " " * (77 - len(f" Replay Ratio: {cl_finetuning_args.replay_ratio}")) + "*")
-        # debugprint("*" + " " * 78 + "*")
-        # debugprint("*" * 80 + "\n")
+        debugprint("\n" + "*" * 80)
+        debugprint("*" + " " * 78 + "*")
+        debugprint("*" + " " * 25 + "使用回放策略准备共享适配器数据集" + " " * 25 + "*")
+        debugprint("*" + " " * 78 + "*")
+        debugprint("*" + f" 回放比例: {cl_finetuning_args.replay_ratio}" + " " * (77 - len(f" 回放比例: {cl_finetuning_args.replay_ratio}")) + "*")
+        debugprint("*" + " " * 78 + "*")
+        debugprint("*" * 80 + "\n")
         logger.info_rank0("Preparing shared adapter dataset using replay strategy") # 添加 logger
         logger.info_rank0(f"Replay Ratio: {cl_finetuning_args.replay_ratio}") # 添加 logger
 
@@ -76,21 +82,21 @@ def run_sft_abscl(
         )
         if "train_dataset" in current_dataset_module:
             total_current_samples = len(current_dataset_module["train_dataset"])
-            
+
             # Apply sampling to the current dataset, regardless of whether it's the first task
             max_current_samples = int(total_current_samples * cl_finetuning_args.replay_ratio)
-            # debugprint(f"Current task dataset sampling: Total samples {total_current_samples}, Replay ratio {cl_finetuning_args.replay_ratio}, Samples {max_current_samples}") # 使用英文
+            debugprint(f"当前任务数据集采样: 总样本数 {total_current_samples}, 回放比例 {cl_finetuning_args.replay_ratio}, 采样数量 {max_current_samples}")
             logger.info_rank0(f"Current task dataset sampling: Total samples {total_current_samples}, Replay ratio {cl_finetuning_args.replay_ratio}, Samples {max_current_samples}") # 添加 logger
             if max_current_samples < total_current_samples:
                 current_indices = random.sample(range(total_current_samples), max_current_samples)
                 current_dataset = current_dataset_module["train_dataset"].select(current_indices)
-                # debugprint(f"Selected {max_current_samples}/{total_current_samples} samples from the current task") # 使用英文
+                debugprint(f"从当前任务中选择了 {max_current_samples}/{total_current_samples} 个样本")
                 logger.info_rank0(f"Selected {max_current_samples}/{total_current_samples} samples from the current task") # 添加 logger
             else:
                 current_dataset = current_dataset_module["train_dataset"]
-                # debugprint(f"Using all {total_current_samples} samples from the current task") # 使用英文
+                debugprint(f"使用当前任务的所有 {total_current_samples} 个样本")
                 logger.info_rank0(f"Using all {total_current_samples} samples from the current task") # 添加 logger
-            
+
             merged_datasets.append(current_dataset)
             replay_datasets_info.append({
                 "name": "current_task",
@@ -104,22 +110,22 @@ def run_sft_abscl(
             original_dataset_dir = copy.deepcopy(data_args.dataset_dir)
             original_dataset = copy.deepcopy(data_args.dataset)
             replay_task_list = [task.strip() for task in cl_finetuning_args.replay_task_list.split(',')]
-            # debugprint(f"Tasks to replay: {replay_task_list}") # 使用英文
+            debugprint(f"要回放的任务: {replay_task_list}")
             logger.info_rank0(f"Tasks to replay: {replay_task_list}") # 添加 logger
             maxsamples_list = (
                 [int(x.strip()) for x in cl_finetuning_args.maxsamples_list.split(',')]
                 if cl_finetuning_args.maxsamples_list else None
             )
-            # debugprint(f"Max samples list for replay tasks: {maxsamples_list}") # 使用英文
+            debugprint(f"回放任务的最大样本数列表: {maxsamples_list}")
             logger.info_rank0(f"Max samples list for replay tasks: {maxsamples_list}") # 添加 logger
             if cl_finetuning_args.previous_task_dataset:
                 data_args.dataset_dir = cl_finetuning_args.previous_task_dataset
-                # debugprint(f"Using previous task dataset directory for replay: {data_args.dataset_dir}") # 使用英文
+                debugprint(f"使用先前任务数据集目录进行回放: {data_args.dataset_dir}")
                 logger.info_rank0(f"Using previous task dataset directory for replay: {data_args.dataset_dir}") # 添加 logger
 
             for task_idx, task_name in enumerate(replay_task_list):
                 data_args.dataset = [task_name]
-                # debugprint(f"Loading replay task: {task_name}") # 使用英文
+                debugprint(f"加载回放任务: {task_name}")
                 logger.info_rank0(f"Loading replay task: {task_name}") # 添加 logger
                 try:
                     replay_dataset_module = get_dataset(
@@ -137,7 +143,7 @@ def run_sft_abscl(
                             if maxsamples_list and task_idx < len(maxsamples_list)
                             else int(total_samples * cl_finetuning_args.replay_ratio)
                         )
-                        # debugprint(f"Replay task {task_name}: Total samples {total_samples}, Replay ratio {cl_finetuning_args.replay_ratio}, Max samples {max_samples}") # 使用英文
+                        debugprint(f"回放任务 {task_name}: 总样本数 {total_samples}, 回放比例 {cl_finetuning_args.replay_ratio}, 最大样本数 {max_samples}")
                         logger.info_rank0(f"Replay task {task_name}: Total samples {total_samples}, Replay ratio {cl_finetuning_args.replay_ratio}, Max samples {max_samples}") # 添加 logger
                         indices = random.sample(range(total_samples), max_samples)
                         replay_dataset = replay_dataset_module["train_dataset"].select(indices)
@@ -147,11 +153,11 @@ def run_sft_abscl(
                             "size_original": total_samples,
                             "size_selected": len(replay_dataset)
                         })
-                        # debugprint(f"Task {task_name}: Selected {len(replay_dataset)} samples for replay") # 使用英文
+                        debugprint(f"任务 {task_name}: 为回放选择了 {len(replay_dataset)} 个样本")
                         logger.info_rank0(f"Task {task_name}: Selected {len(replay_dataset)} samples for replay") # 添加 logger
                 except Exception as e:
                     logger.info_rank0(f"Failed to load replay task {task_name}: {str(e)}") # error -> info_rank0
-                    # debugprint(f"Failed to load replay task {task_name}: {str(e)}") # 使用英文
+                    debugprint(f"加载回放任务 {task_name} 失败: {str(e)}")
                     continue
 
             data_args.dataset_dir = original_dataset_dir
@@ -179,53 +185,99 @@ def run_sft_abscl(
             stage="sft",
             **tokenizer_module
         )
-    
+
     # Save original output directory
     original_output_dir = training_args.output_dir
-    
+
     # Ensure adapters_save_path exists
     adapters_save_path = cl_finetuning_args.adapters_save_path
     if not adapters_save_path:
         # If not specified, use output_dir as the default path
         adapters_save_path = os.path.join(original_output_dir, "adapters")
-    
-    os.makedirs(adapters_save_path, exist_ok=True)
-    # debugprint(f"Adapters will be saved to: {adapters_save_path}") # 使用英文
-    logger.info_rank0(f"Adapters will be saved to: {adapters_save_path}") # 添加 logger
+
+    # 在分布式环境中，只在主进程创建目录
+    if is_main_process():
+        os.makedirs(adapters_save_path, exist_ok=True)
+        logger.info_rank0(f"Adapters will be saved to: {adapters_save_path}")
+
+    # 在分布式环境中等待主进程创建目录
+    if is_distributed():
+        torch.distributed.barrier()
 
     # =========================== Train shared adapter ===========================
     adapter_name = "shared_adapter"
     adapter_output_dir = os.path.join(adapters_save_path, adapter_name)
-    
+
     # Set output directory for shared adapter
     training_args = copy.deepcopy(training_args)  # Create a copy to avoid modifying the original object
     training_args.output_dir = adapter_output_dir
     training_args.overwrite_output_dir = True  # Overwrite existing adapter
-    
-    os.makedirs(training_args.output_dir, exist_ok=True)
-    # debugprint(f"Training shared adapter: {adapter_name}, Output directory: {training_args.output_dir}") # 使用英文
-    logger.info_rank0(f"Training shared adapter: {adapter_name}, Output directory: {training_args.output_dir}") # 添加 logger
-    
+
+    # 在分布式环境中，只在主进程创建目录
+    if is_main_process():
+        os.makedirs(training_args.output_dir, exist_ok=True)
+        logger.info_rank0(f"Training shared adapter: {adapter_name}, Output directory: {training_args.output_dir}")
+
+    # 在分布式环境中等待主进程创建目录
+    if is_distributed():
+        torch.distributed.barrier()
+
     # Create model argument copies for shared adapter
     model_args_copy = copy.deepcopy(model_args)
     finetuning_args_copy = copy.deepcopy(finetuning_args)
     cl_finetuning_args_copy = copy.deepcopy(cl_finetuning_args)
-    
-    # Check if a pre-trained shared adapter exists (check for adapter_config.json)
-    if os.path.exists(os.path.join(adapter_output_dir, "adapter_config.json")):
-        # If a pre-trained shared adapter exists, load it
-        model_args_copy.adapter_name_or_path = [adapter_output_dir]
-        # debugprint(f"Loading pre-trained shared adapter: {adapter_output_dir}") # 使用英文
-        logger.info_rank0(f"Loading pre-trained shared adapter: {adapter_output_dir}") # 添加 logger
+
+    # 在分布式环境中，只在主进程检查文件是否存在
+    if is_main_process():
+        # Check if a pre-trained shared adapter exists (check for adapter_config.json)
+        shared_adapter_config_path = os.path.join(adapter_output_dir, "adapter_config.json")
+        if os.path.exists(shared_adapter_config_path):
+            # If a pre-trained shared adapter exists, load it
+            adapter_exists = True
+            logger.info_rank0(f"Loading pre-trained shared adapter: {adapter_output_dir}")
+            debugprint(f"发现预训练的共享适配器配置文件: {shared_adapter_config_path}")
+            debugprint(f"将加载已有的共享适配器: {adapter_output_dir}")
+        else:
+            # Otherwise, initialize the shared adapter randomly
+            adapter_exists = False
+            logger.info_rank0(f"Pre-trained shared adapter not found, initializing a new one")
+            debugprint(f"未找到预训练的共享适配器配置文件: {shared_adapter_config_path}")
+            debugprint(f"将初始化一个新的共享适配器")
     else:
-        # Otherwise, initialize the shared adapter randomly
+        # 非主进程初始化为None，等待广播
+        adapter_exists = None
+
+    # 在分布式环境中广播检查结果
+    if is_distributed():
+        rank = get_rank()
+        world_size = get_world_size()
+        debugprint(f"[rank {rank}/{world_size-1}] 广播共享适配器存在状态前: adapter_exists = {adapter_exists}")
+        adapter_exists = broadcast_object(adapter_exists)
+        debugprint(f"[rank {rank}/{world_size-1}] 广播共享适配器存在状态后: adapter_exists = {adapter_exists}")
+    else:
+        debugprint(f"非分布式环境: adapter_exists = {adapter_exists}")
+
+    # 根据检查结果设置adapter_name_or_path
+    if adapter_exists:
+        model_args_copy.adapter_name_or_path = [adapter_output_dir]
+        debugprint(f"共享适配器存在，设置 model_args_copy.adapter_name_or_path = {model_args_copy.adapter_name_or_path}")
+    else:
         model_args_copy.adapter_name_or_path = None
-        # debugprint(f"Pre-trained shared adapter not found, initializing a new one") # 使用英文
-        logger.info_rank0(f"Pre-trained shared adapter not found, initializing a new one") # 添加 logger
-    
+        debugprint(f"共享适配器不存在，设置 model_args_copy.adapter_name_or_path = None")
+
     # Load model (with shared adapter, if it exists)
+    debugprint(f"开始加载模型，adapter_name_or_path = {model_args_copy.adapter_name_or_path}")
     model = load_model(tokenizer, model_args_copy, finetuning_args_copy, training_args.do_train)
-    
+    debugprint(f"模型加载完成，是否加载了共享适配器: {adapter_exists}")
+
+    # 检查模型的PEFT配置
+    if hasattr(model, "peft_config"):
+        debugprint(f"模型PEFT配置: {list(model.peft_config.keys())}")
+        for adapter_name, config in model.peft_config.items():
+            debugprint(f"适配器 '{adapter_name}' 配置: {config}")
+    else:
+        debugprint("模型没有PEFT配置")
+
     if getattr(model, "is_quantized", False) and not training_args.do_train:
         setattr(model, "_hf_peft_config_loaded", True)  # hack here: make model compatible with prediction
 
@@ -279,7 +331,7 @@ def run_sft_abscl(
     if training_args.do_train:
         train_result = trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
         trainer.save_model()  # Save to adapter_output_dir
-        
+
         if finetuning_args_copy.include_effective_tokens_per_second:
             train_result.metrics["effective_tokens_per_sec"] = calculate_tps(
                 dataset_module["train_dataset"], train_result.metrics, stage="sft"
@@ -297,7 +349,7 @@ def run_sft_abscl(
                         train_result.metrics[f"{prefix}_{key}"] = str(value)
                     else:
                         train_result.metrics[f"{prefix}_{key}"] = str(value)
-            
+
             if cl_finetuning_args.replay_task_list:
                 # Ensure it is a string, not a list
                 if isinstance(replay_task_list, list):
@@ -309,12 +361,14 @@ def run_sft_abscl(
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
         trainer.save_state()
-        if trainer.is_world_process_zero() and finetuning_args_copy.plot_loss:
+        if is_main_process() and finetuning_args_copy.plot_loss:
             plot_loss(training_args.output_dir, keys=["loss", "eval_loss", "eval_accuracy"])
 
     # Clean up memory for task-specific adapter training
     del model
     del trainer
+    AcceleratorState._reset_state()   # 清掉全局 state
+    PartialState._reset_state()
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -323,18 +377,18 @@ def run_sft_abscl(
     if not cl_finetuning_args.current_task_id:
         logger.warning_rank0("No current_task_id specified, using 'task' as default task ID")
         task_id = "task"
-        # debugprint("No current_task_id specified, using 'task' as default task ID") # 使用英文
+        debugprint("未指定current_task_id，使用'task'作为默认任务ID")
     else:
         task_id = cl_finetuning_args.current_task_id
-        # debugprint(f"Current task ID: {task_id}") # 使用英文
+        debugprint(f"当前任务ID: {task_id}")
         logger.info_rank0(f"Current task ID: {task_id}") # 添加 logger
 
     # Reload the original, unsampled dataset for the task-specific adapter
-    # debugprint("\n" + "*" * 80)
-    # debugprint("*" + " " * 78 + "*")
-    # debugprint("*" + " " * 20 + "Loading original dataset for task adapter" + " " * 20 + "*") # 使用英文
-    # debugprint("*" + " " * 78 + "*")
-    # debugprint("*" * 80 + "\n")
+    debugprint("\n" + "*" * 80)
+    debugprint("*" + " " * 78 + "*")
+    debugprint("*" + " " * 20 + "为任务适配器加载原始数据集" + " " * 20 + "*")
+    debugprint("*" + " " * 78 + "*")
+    debugprint("*" * 80 + "\n")
     logger.info_rank0("Loading original dataset for task adapter") # 添加 logger
 
     dataset_module = get_dataset(
@@ -345,58 +399,74 @@ def run_sft_abscl(
         stage="sft",
         **tokenizer_module
     )
-    
+
     if "train_dataset" in dataset_module:
-        # debugprint(f"Using full original dataset with {len(dataset_module['train_dataset'])} samples for task adapter training") # 使用英文
+        debugprint(f"使用完整原始数据集，包含 {len(dataset_module['train_dataset'])} 个样本进行任务适配器训练")
         logger.info_rank0(f"Using full original dataset with {len(dataset_module['train_dataset'])} samples for task adapter training") # 添加 logger
 
     adapter_name = task_id
     adapter_output_dir = os.path.join(adapters_save_path, adapter_name)
-    
+
     # Set output directory for task-specific adapter
     training_args = copy.deepcopy(training_args)  # Recreate a copy
     training_args.output_dir = adapter_output_dir
-    
-    os.makedirs(training_args.output_dir, exist_ok=True)
-    # debugprint(f"Training task-specific adapter: {adapter_name}, Output directory: {training_args.output_dir}") # 使用英文
-    logger.info_rank0(f"Training task-specific adapter: {adapter_name}, Output directory: {training_args.output_dir}") # 添加 logger
-    
+
+    # 在分布式环境中，只在主进程创建目录
+    if is_main_process():
+        os.makedirs(training_args.output_dir, exist_ok=True)
+        logger.info_rank0(f"Training task-specific adapter: {adapter_name}, Output directory: {training_args.output_dir}")
+
+    # 在分布式环境中等待主进程创建目录
+    if is_distributed():
+        torch.distributed.barrier()
+
     # Create model argument copies for task-specific adapter
     model_args_copy = copy.deepcopy(model_args)
     finetuning_args_copy = copy.deepcopy(finetuning_args)
-    
+
     # Ensure the shared adapter path exists
     shared_adapter_dir = os.path.join(adapters_save_path, "shared_adapter")
-    # debugprint(f"Checking shared adapter directory: {shared_adapter_dir}") # 使用英文
-    logger.info_rank0(f"Checking shared adapter directory: {shared_adapter_dir}") # 添加 logger
-    if not os.path.exists(shared_adapter_dir) or not os.path.exists(os.path.join(shared_adapter_dir, "adapter_config.json")):
-        logger.warning_rank0(f"Warning: Shared adapter not found at {shared_adapter_dir}, will proceed but orthogonal loss might not be calculated")
-        # debugprint(f"Warning: Shared adapter not found at {shared_adapter_dir}, will proceed but orthogonal loss might not be calculated") # 使用英文
+    logger.info_rank0(f"Checking shared adapter directory: {shared_adapter_dir}")
+
+    # 在分布式环境中，只在主进程检查文件是否存在
+    if is_main_process():
+        if not os.path.exists(shared_adapter_dir) or not os.path.exists(os.path.join(shared_adapter_dir, "adapter_config.json")):
+            shared_adapter_exists = False
+            logger.warning_rank0(f"Warning: Shared adapter not found at {shared_adapter_dir}, will proceed but orthogonal loss might not be calculated")
+        else:
+            shared_adapter_exists = True
+    else:
+        # 非主进程初始化为None，等待广播
+        shared_adapter_exists = None
+
+    # 在分布式环境中广播检查结果
+    if is_distributed():
+        shared_adapter_exists = broadcast_object(shared_adapter_exists)
 
     # Set adapters_save_path in finetuning_args_copy
-    finetuning_args_copy.adapters_save_path = adapters_save_path  
+    finetuning_args_copy.adapters_save_path = adapters_save_path
     # debugprint(f"Set adapters_save_path for task adapter: {finetuning_args_copy.adapters_save_path}") # 使用英文
     logger.info_rank0(f"Set adapters_save_path for task adapter: {finetuning_args_copy.adapters_save_path}") # 添加 logger
-    
+
     # Load only the base model, do not preload any adapters
     model_args_copy.adapter_name_or_path = None
-    
-    # debugprint(f"Loading base model and initializing new task-specific adapter: {task_id}") # 使用英文
+
+    debugprint(f"加载基础模型并初始化新的任务特定适配器: {task_id}")
     logger.info_rank0(f"Loading base model and initializing new task-specific adapter: {task_id}") # 添加 logger
-    
+
     # Load model (randomly initialize task-specific adapter)
     model = load_model(tokenizer, model_args_copy, finetuning_args_copy, training_args.do_train)
 
     # Check and log adapter configuration after creating the model
-    # debugprint("Checking PEFT config after model loading:") # 使用英文
+    debugprint("检查模型加载后的PEFT配置:")
     logger.info_rank0("Checking PEFT config after model loading:") # 添加 logger
     if hasattr(model, "peft_config"):
         for adapter_name_cfg, config in model.peft_config.items(): # Rename adapter_name to adapter_name_cfg to avoid conflict
-            # debugprint(f"Adapter '{adapter_name_cfg}' config: {config}") # 使用英文
+            debugprint(f"适配器 '{adapter_name_cfg}' 配置: {config}")
             logger.info_rank0(f"Adapter '{adapter_name_cfg}' config: {config}") # 添加 logger
             if hasattr(config, "target_modules"):
-                # debugprint(f"Adapter '{adapter_name_cfg}' target modules: {config.target_modules}") # 使用英文
-                 logger.info_rank0(f"Adapter '{adapter_name_cfg}' target modules: {config.target_modules}") # 添加 logger
+                debugprint(f"适配器 '{adapter_name_cfg}' 目标模块: {config.target_modules}")
+                logger.info_rank0(f"Adapter '{adapter_name_cfg}' target modules: {config.target_modules}") # 添加 logger
 
     if getattr(model, "is_quantized", False) and not training_args.do_train:
         setattr(model, "_hf_peft_config_loaded", True)  # hack here: make model compatible with prediction
@@ -452,24 +522,24 @@ def run_sft_abscl(
     if training_args.do_train:
         train_result = trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
         trainer.save_model()  # Save to adapter_output_dir
-        
+
         if finetuning_args_copy.include_effective_tokens_per_second:
             train_result.metrics["effective_tokens_per_sec"] = calculate_tps(
                 dataset_module["train_dataset"], train_result.metrics, stage="sft"
             )
-            
+
         # Add logging for ABSCL extra losses
         extra_losses = trainer.get_extra_losses(model)
         train_result.metrics.update(extra_losses)
-        
+
         # Log ABSCL-related parameters
         train_result.metrics["orthogonal_lambda"] = cl_finetuning_args.abscl_orthogonal_lambda
         train_result.metrics["shared_l2_lambda"] = cl_finetuning_args.abscl_shared_l2_lambda
-        
+
         # Log used adapter information
         train_result.metrics["shared_adapter"] = os.path.join(adapters_save_path, "shared_adapter")
         train_result.metrics["task_adapter"] = os.path.join(adapters_save_path, adapter_name)
-        
+
         # Log to console
         # debugprint(f"ABSCL Orthogonal Loss: {extra_losses['orthogonal_loss']}") # 使用英文
         # debugprint(f"ABSCL Shared L2 Loss: {extra_losses['shared_l2_loss']}") # 使用英文
@@ -487,31 +557,34 @@ def run_sft_abscl(
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
         trainer.save_state()
-        if trainer.is_world_process_zero() and finetuning_args_copy.plot_loss:
+        if is_main_process() and finetuning_args_copy.plot_loss:
             plot_loss(training_args.output_dir, keys=["loss", "eval_loss", "eval_accuracy", "orthogonal_loss", "shared_l2_loss"])
 
         # ====================== Add feature extraction and statistics process ======================
-        # debugprint("\n" + "*" * 80)
-        # debugprint("*" + " " * 78 + "*")
-        # debugprint("*" + " " * 25 + "Feature extraction and statistics processing" + " " * 24 + "*") # 使用英文
-        # debugprint("*" + " " * 78 + "*")
-        # debugprint("*" * 80 + "\n")
+        debugprint("\n" + "*" * 80)
+        debugprint("*" + " " * 78 + "*")
+        debugprint("*" + " " * 25 + "特征提取和统计处理" + " " * 24 + "*")
+        debugprint("*" + " " * 78 + "*")
+        debugprint("*" * 80 + "\n")
         logger.info_rank0("Feature extraction and statistics processing") # 添加 logger
-        
+
         # Get statistics save path
         stats_path = cl_finetuning_args.abscl_stats_path # Use original cl_finetuning_args
         if not stats_path:
             stats_path = os.path.join(adapters_save_path, "abscl_stats")
-            # debugprint(f"abscl_stats_path not specified, using default path: {stats_path}") # 使用英文
-            logger.info_rank0(f"abscl_stats_path not specified, using default path: {stats_path}") # 添加 logger
+            logger.info_rank0(f"abscl_stats_path not specified, using default path: {stats_path}")
         else:
-            # debugprint(f"Specified abscl_stats_path: {stats_path}") # 使用英文
-            logger.info_rank0(f"Specified abscl_stats_path: {stats_path}") # 添加 logger
-        
-        os.makedirs(stats_path, exist_ok=True)
-        # debugprint(f"Feature statistics will be saved to: {stats_path}") # 使用英文
-        logger.info_rank0(f"Feature statistics will be saved to: {stats_path}") # 添加 logger
-        
+            logger.info_rank0(f"Specified abscl_stats_path: {stats_path}")
+
+        # 在分布式环境中，只在主进程创建目录
+        if is_main_process():
+            os.makedirs(stats_path, exist_ok=True)
+            logger.info_rank0(f"Feature statistics will be saved to: {stats_path}")
+
+        # 在分布式环境中等待主进程创建目录
+        if is_distributed():
+            torch.distributed.barrier()
+
         # Extract task-specific feature statistics
         try:
             extract_feature_statistics(
@@ -523,11 +596,11 @@ def run_sft_abscl(
                 device=training_args.device,
                 dataset=dataset_module.get("train_dataset")
             )
-            # debugprint(f"Feature statistics processing complete, results saved in {stats_path}") # 使用英文
+            debugprint(f"特征统计处理完成，结果保存在 {stats_path}")
             logger.info_rank0(f"Feature statistics processing complete, results saved in {stats_path}") # 添加 logger
         except Exception as e:
             logger.info_rank0(f"Error during feature extraction process: {str(e)}")
-            # debugprint(f"Error during feature extraction: {str(e)}") # 使用英文
+            debugprint(f"特征提取过程中出错: {str(e)}")
 
     if training_args.predict_with_generate:
         tokenizer.padding_side = "left"  # use left-padding in generation
@@ -548,20 +621,20 @@ def run_sft_abscl(
 
     # Create model card
     create_modelcard_and_push(trainer, model_args_copy, data_args, training_args, finetuning_args_copy)
-    
+
     # Clean up memory
     del model
     del trainer
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    
+
     # Log completion message
-    # debugprint(f"ABSCL training complete. Adapters saved in {adapters_save_path}") # 使用英文
-    # debugprint(f"  - Shared adapter: {os.path.join(adapters_save_path, 'shared_adapter')}") # 使用英文
-    # debugprint(f"  - Task-specific adapter: {os.path.join(adapters_save_path, task_id)}") # 使用英文
+    debugprint(f"ABSCL训练完成。适配器已保存在 {adapters_save_path}")
+    debugprint(f"  - 共享适配器: {os.path.join(adapters_save_path, 'shared_adapter')}")
+    debugprint(f"  - 任务特定适配器: {os.path.join(adapters_save_path, task_id)}")
     logger.info_rank0(f"ABSCL training complete. Adapters saved in {adapters_save_path}") # 添加 logger
     logger.info_rank0(f"  - Shared adapter: {os.path.join(adapters_save_path, 'shared_adapter')}") # 添加 logger
     logger.info_rank0(f"  - Task-specific adapter: {os.path.join(adapters_save_path, task_id)}") # 添加 logger
-    
+
     return

@@ -14,6 +14,7 @@
 
 from typing import TYPE_CHECKING, Optional
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 import os
 from typing import List
 from llamafactory.data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer
@@ -27,10 +28,13 @@ from llamafactory.train.sft.metric import ComputeAccuracy, ComputeSimilarity, ev
 from .ewc_trainer import EWCSeq2SeqTrainer
 from llamafactory.hparams import DataArguments, FinetuningArguments, GeneratingArguments, ModelArguments
 from easycl.hparams import CLFinetuningArguments
+from ..distributed_utils import (
+    is_distributed, get_rank, get_world_size, is_main_process,
+    get_deepspeed_zero_stage, gather_parameters, all_reduce_tensor
+)
 import traceback
 def debugprint(*args, **kwargs):
     pass
-
 
 if TYPE_CHECKING:
     from transformers import Seq2SeqTrainingArguments, TrainerCallback
@@ -115,7 +119,7 @@ def run_sft_ewc(
     # Training
     if training_args.do_train:
         # If current_task_name is not specified, extract from dataset path
-        
+
         # Modify EWC logic
         if cl_finetuning_args.use_ewc:
             if cl_finetuning_args.previous_task_data:
@@ -127,7 +131,7 @@ def run_sft_ewc(
                     # Save current dataset configuration
                     current_dataset = data_args.dataset
                     data_args.dataset = [cl_finetuning_args.previous_task_data]
-                    
+
                     prev_dataset_module = get_dataset(
                         template,
                         model_args,
@@ -136,16 +140,31 @@ def run_sft_ewc(
                         stage="sft",
                         **tokenizer_module
                     )
-                    
+
                     if "train_dataset" in prev_dataset_module:
                         logger.info("Computing Fisher information for EWC using previous task data...")
                         try:
-                            # Create dataloader with same collator as training
+                            # Create dataloader with distributed sampler if needed
+                            prev_train_dataset = prev_dataset_module["train_dataset"]
+
+                            if is_distributed():
+                                # Use DistributedSampler for the previous task dataset
+                                debugprint(f"[Rank {get_rank()}] Creating DistributedSampler for Fisher computation")
+                                prev_sampler = DistributedSampler(
+                                    prev_train_dataset,
+                                    num_replicas=get_world_size(),
+                                    rank=get_rank(),
+                                    shuffle=True  # Shuffle samples for Fisher computation
+                                )
+                            else:
+                                prev_sampler = None  # No sampler needed for single process
+
                             prev_dataloader = DataLoader(
-                                prev_dataset_module["train_dataset"],
+                                prev_train_dataset,
                                 batch_size=training_args.per_device_train_batch_size,
-                                shuffle=True,
-                                collate_fn=data_collator
+                                sampler=prev_sampler,  # Use the distributed sampler if applicable
+                                collate_fn=data_collator,
+                                shuffle=(prev_sampler is None)  # Shuffle only if not using DistributedSampler
                             )
                             success = trainer.prepare_for_new_task(prev_dataloader, cl_finetuning_args.ewc_num_samples)
                             if not success:
@@ -182,16 +201,21 @@ def run_sft_ewc(
 
         # Add EWC loss and previous task information printing
         if cl_finetuning_args.use_ewc:
-            ewc_loss = trainer.ewc.ewc_loss().item()
-            train_result.metrics["ewc_loss"] = ewc_loss
-            logger.info(f"EWC Loss: {ewc_loss}")
-            
-            # Add previous task information to metrics
-            if cl_finetuning_args.previous_task_data:
-                train_result.metrics["previous_task_data"] = cl_finetuning_args.previous_task_data
-                train_result.metrics["ewc_num_samples"] = cl_finetuning_args.ewc_num_samples
-                logger.info(f"Previous Task Data: {cl_finetuning_args.previous_task_data}")
-                logger.info(f"EWC Samples Used: {cl_finetuning_args.ewc_num_samples}")
+            # Calculate EWC loss on all ranks to avoid deadlock in gather_parameters
+            ewc_loss_val = trainer.ewc.ewc_loss().item()
+
+            # Only log and add to metrics on the main process
+            if is_main_process():
+                train_result.metrics["ewc_loss"] = ewc_loss_val
+                logger.info(f"EWC Loss (logged post-train): {ewc_loss_val}")
+
+                # Add previous task information to metrics
+                if cl_finetuning_args.previous_task_data:
+                    train_result.metrics["previous_task_data"] = cl_finetuning_args.previous_task_data
+                    train_result.metrics["ewc_num_samples"] = cl_finetuning_args.ewc_num_samples
+                    logger.info(f"Previous Task Data: {cl_finetuning_args.previous_task_data}")
+                    logger.info(f"EWC Samples Used: {cl_finetuning_args.ewc_num_samples}")
+                    logger.info(f"Distributed Training: {is_distributed()}, World Size: {get_world_size()}")
 
 
         trainer.log_metrics("train", train_result.metrics)

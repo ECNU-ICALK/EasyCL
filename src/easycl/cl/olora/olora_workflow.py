@@ -13,9 +13,12 @@ from .olora import OLoRA
 from .olora_trainer import OLoRATrainer
 from llamafactory.hparams import DataArguments, FinetuningArguments, GeneratingArguments, ModelArguments
 from easycl.hparams import CLFinetuningArguments
+from easycl.cl.distributed_utils import is_main_process, broadcast_object
+import torch.distributed as dist
+import torch
 def debugprint(*args, **kwargs):
     pass
-
+from easycl.cl.distributed_utils import get_deepspeed_zero_stage
 
 if TYPE_CHECKING:
     from transformers import Seq2SeqTrainingArguments, TrainerCallback
@@ -79,7 +82,7 @@ def run_sft_olora(
     # Validate and initialize O-LoRA settings
     if cl_finetuning_args.use_olora:
         if not cl_finetuning_args.current_task_id:
-            logger.warning(
+            logger.warning_rank0(
                 "No current_task_id provided for O-LoRA. "
                 "Will try to extract from the output directory name."
             )
@@ -91,15 +94,20 @@ def run_sft_olora(
                     "Could not determine current_task_id. "
                     "Please provide it explicitly for O-LoRA."
                 )
-                
-        # Ensure O-LoRA history path exists
-        os.makedirs(cl_finetuning_args.olora_history_path, exist_ok=True)
-        
-        logger.info("O-LoRA is enabled with following parameters:")
-        logger.info(f"- Current task ID: {cl_finetuning_args.current_task_id}")
-        logger.info(f"- Orthogonal lambda: {cl_finetuning_args.orthogonal_lambda}")
-        logger.info(f"- L2 lambda: {cl_finetuning_args.l2_lambda}")
-        logger.info(f"- History path: {cl_finetuning_args.olora_history_path}")
+
+        # Ensure O-LoRA history path exists (only on main process)
+        if is_main_process():
+            os.makedirs(cl_finetuning_args.olora_history_path, exist_ok=True)
+
+        # Synchronize after directory creation
+        if torch.distributed.is_initialized():
+            torch.distributed.barrier()
+
+        logger.info_rank0("O-LoRA is enabled with following parameters:")
+        logger.info_rank0(f"- Current task ID: {cl_finetuning_args.current_task_id}")
+        logger.info_rank0(f"- Orthogonal lambda: {cl_finetuning_args.orthogonal_lambda}")
+        logger.info_rank0(f"- L2 lambda: {cl_finetuning_args.l2_lambda}")
+        logger.info_rank0(f"- History path: {cl_finetuning_args.olora_history_path}")
         debugprint(f"run_sft_olora: O-LoRA 已启用，参数:")
         debugprint(f"  - current_task_id: {cl_finetuning_args.current_task_id}")
         debugprint(f"  - orthogonal_lambda: {cl_finetuning_args.orthogonal_lambda}")
@@ -124,7 +132,7 @@ def run_sft_olora(
     # After loading the model, if O-LoRA is enabled, initialize and set up
     if cl_finetuning_args.use_olora:
         from .olora import OLoRA
-        
+
         # Create O-LoRA instance
         olora = OLoRA(
             model=model,
@@ -136,22 +144,34 @@ def run_sft_olora(
             prev_task_id=cl_finetuning_args.prev_task_id
         )
         debugprint(f"run_sft_olora: OLoRA 实例已创建。传入的 prev_task_id: {cl_finetuning_args.prev_task_id}")
-        
+
         # Load previous task's adapter parameters
+        rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+        debugprint(f"run_sft_olora: [rank {rank}] 即将调用 olora.load_prev_adapter({cl_finetuning_args.prev_task_id})")
         load_success = olora.load_prev_adapter(cl_finetuning_args.prev_task_id)
-        debugprint(f"run_sft_olora: 调用 olora.load_prev_adapter({cl_finetuning_args.prev_task_id}) 结果: {load_success}")
+        debugprint(f"run_sft_olora: [rank {rank}] 调用 olora.load_prev_adapter({cl_finetuning_args.prev_task_id}) 返回: {load_success}")
         if load_success:
-            logger.info(f"Successfully loaded previous task adapter: {cl_finetuning_args.prev_task_id}")
-        
-        # Important: Set up adapters to enable orthogonal constraints
-        current_adapter_name = "current"  # We use fixed name "current" for current task
-        setup_success = olora.setup_adapters(current_adapter_name)
-        debugprint(f"run_sft_olora: 调用 olora.setup_adapters('{current_adapter_name}') 结果: {setup_success}")
-        if setup_success:
-            logger.info(f"Successfully set up O-LoRA adapters with current adapter: {current_adapter_name}")
+            logger.info_rank0(f"Successfully loaded previous task adapter: {cl_finetuning_args.prev_task_id}")
         else:
-            logger.warning("Failed to set up O-LoRA adapters, orthogonal loss may not be computed correctly")
-        
+            # Check if it was actually the first task or a loading error
+            if cl_finetuning_args.prev_task_id is not None:
+                logger.warning_rank0(f"Failed to load previous task adapter ({cl_finetuning_args.prev_task_id}). Orthogonal loss will be disabled.")
+            else:
+                logger.info_rank0("No previous task ID found, likely the first task.")
+
+        # Add barrier after loading to ensure all ranks are synchronized before setup
+        if dist.is_available() and dist.is_initialized():
+            debugprint(f"run_sft_olora: [rank {rank}] 执行 barrier after load_prev_adapter")
+            dist.barrier()
+            debugprint(f"run_sft_olora: [rank {rank}] 通过 barrier after load_prev_adapter")
+
+        # 注意：移除了创建 "current" adapter 的代码，因为它在实际计算中未被使用
+        # 添加同步屏障确保所有进程同步
+        if dist.is_available() and dist.is_initialized():
+            debugprint(f"run_sft_olora: [rank {rank}] 执行 barrier after load_prev_adapter")
+            dist.barrier()
+            debugprint(f"run_sft_olora: [rank {rank}] 通过 barrier after load_prev_adapter")
+
         # Attach O-LoRA instance to trainer for later use
         trainer.olora = olora
 
@@ -164,9 +184,9 @@ def run_sft_olora(
             # Extract task name from filename and convert to uppercase
             task_name = os.path.splitext(os.path.basename(last_dataset))[0].upper()
             cl_finetuning_args.current_task_id = task_name
-            logger.info(f"Extracted current task name: {task_name}")
+            logger.info_rank0(f"Extracted current task name: {task_name}")
             debugprint(f"run_sft_olora: 从数据集提取的任务名: {task_name}")
-        
+
         train_result = trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
         trainer.save_model()
         if finetuning_args.include_effective_tokens_per_second:
@@ -187,11 +207,11 @@ def run_sft_olora(
                 if "l2_loss" not in train_result.metrics:
                   train_result.metrics["l2_loss"] = l2_loss
 
-                logger.info(f"Final O-LoRA losses:")
-                logger.info(f"- Orthogonal loss: {orthogonal_loss:.4f}")
-                logger.info(f"- L2 loss: {l2_loss:.4f}")
+                logger.info_rank0(f"Final O-LoRA losses:")
+                logger.info_rank0(f"- Orthogonal loss: {orthogonal_loss:.4f}")
+                logger.info_rank0(f"- L2 loss: {l2_loss:.4f}")
             else:
-                logger.warning("O-LoRA was enabled but trainer.olora is not found!")
+                logger.warning_rank0("O-LoRA was enabled but trainer.olora is not found!")
                 debugprint("run_sft_olora: O-LoRA 启用但 trainer.olora 未找到!")
 
         if cl_finetuning_args.use_olora:
@@ -199,12 +219,12 @@ def run_sft_olora(
             debugprint(f"run_sft_olora: 准备保存合并后的 adapter，任务 ID: {cl_finetuning_args.current_task_id}")
             save_merged_success = trainer.olora.save_merged_adapter(cl_finetuning_args.current_task_id)
             debugprint(f"run_sft_olora: 保存合并后的 adapter 结果: {save_merged_success}")
-            
+
             # Record O-LoRA related metrics
             if "orthogonal_loss" in train_result.metrics:
-                logger.info(f"Final orthogonal loss: {train_result.metrics['orthogonal_loss']:.4f}")
+                logger.info_rank0(f"Final orthogonal loss: {train_result.metrics['orthogonal_loss']:.4f}")
             if "l2_loss" in train_result.metrics:
-                logger.info(f"Final L2 loss: {train_result.metrics['l2_loss']:.4f}")
+                logger.info_rank0(f"Final L2 loss: {train_result.metrics['l2_loss']:.4f}")
 
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
@@ -223,11 +243,16 @@ def run_sft_olora(
 
     # Predict
     if training_args.do_predict:
-        logger.warning_rank0_once("Batch generation can be very slow. Consider using `scripts/vllm_infer.py` instead.")
+        logger.warning_rank0("Batch generation can be very slow. Consider using `scripts/vllm_infer.py` instead.")
         predict_results = trainer.predict(dataset_module["eval_dataset"], metric_key_prefix="predict", **gen_kwargs)
         trainer.log_metrics("predict", predict_results.metrics)
         trainer.save_metrics("predict", predict_results.metrics)
         trainer.save_predictions(dataset_module["eval_dataset"], predict_results, generating_args.skip_special_tokens)
 
-    # Create model card
-    create_modelcard_and_push(trainer, model_args, data_args, training_args, finetuning_args)
+    # Create model card (only on main process)
+    if is_main_process():
+        create_modelcard_and_push(trainer, model_args, data_args, training_args, finetuning_args)
+
+    # Ensure all processes are synchronized before returning
+    if torch.distributed.is_initialized():
+        torch.distributed.barrier()

@@ -2,7 +2,7 @@ import os  # 添加此行导入os模块
 import copy # Add copy
 import random # Add random
 from typing import TYPE_CHECKING, Optional
-
+from contextlib import nullcontext
 from llamafactory.data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer
 from llamafactory.data.data_utils import merge_dataset # Add merge_dataset
 from llamafactory.extras.constants import IGNORE_INDEX
@@ -14,7 +14,10 @@ from llamafactory.train.sft.metric import ComputeAccuracy, ComputeSimilarity, ev
 from llamafactory.train.trainer_utils import create_modelcard_and_push
 from easycl.cl.ilora.ilora_loader import load_ilora_model
 from easycl.cl.ilora.ilora_trainer import ILORATrainer
-
+from easycl.cl.distributed_utils import (
+    is_distributed, get_rank, is_main_process, get_world_size,
+    get_deepspeed_zero_stage, gather_parameters, all_reduce_tensor
+)
 def debugprint(*args, **kwargs):
     pass
 if TYPE_CHECKING:

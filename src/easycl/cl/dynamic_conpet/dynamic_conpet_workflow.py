@@ -18,6 +18,8 @@ from llamafactory.train.sft.metric import ComputeAccuracy, ComputeSimilarity, ev
 from llamafactory.train.sft.trainer import CustomSeq2SeqTrainer
 from .dynamic_conpet_trainer import DynamicConPetTrainer
 from .dynamic_conpet import DatasetClassifier, save_classifier, load_classifier
+from accelerate.state import AcceleratorState, PartialState
+from .dynamic_conpet import is_distributed, get_rank, is_main_process
 def debugprint(*args, **kwargs):
     pass
 
@@ -62,7 +64,7 @@ def run_sft_dynamic_conpet(
     tokenizer = tokenizer_module["tokenizer"]
     processor = tokenizer_module.get("processor", None)
     template = get_template_and_fix_tokenizer(tokenizer, data_args)
-    
+
     # ============= Prepare current and historical datasets (1:1 ratio) =============
     if training_args.do_train:
         debugprint("\n" + "*" * 80)
@@ -85,7 +87,7 @@ def run_sft_dynamic_conpet(
             stage="sft",
             **tokenizer_module
         )
-        
+
         current_dataset = None
         current_dataset_size = 0
         if "train_dataset" in current_dataset_module:
@@ -97,7 +99,7 @@ def run_sft_dynamic_conpet(
 
             current_dataset_size = len(current_dataset)
             debugprint(f"已加载当前数据集，包含 {current_dataset_size} 个样本")
-            
+
             # Determine the name for the current task for classifier
             current_task_name_for_classifier = cl_finetuning_args.current_task_id
             if not current_task_name_for_classifier:
@@ -279,14 +281,24 @@ def run_sft_dynamic_conpet(
     debugprint(f"原始输出目录: {original_output_dir}")
 
     # Ensure adapters_save_path exists
+    rank = get_rank()
     adapters_save_path = cl_finetuning_args.adapters_save_path
     if not adapters_save_path:
         # If not specified, use output_dir as default path
         adapters_save_path = os.path.join(original_output_dir, "adapters")
-        debugprint(f"adapters_save_path 未指定，使用默认路径: {adapters_save_path}")
+        debugprint(f"进程 rank={rank} adapters_save_path 未指定，使用默认路径: {adapters_save_path}")
 
-    os.makedirs(adapters_save_path, exist_ok=True)
-    debugprint(f"适配器将保存到: {adapters_save_path} (rank0)")
+    # Only create directories in the main process
+    if is_main_process():
+        os.makedirs(adapters_save_path, exist_ok=True)
+        debugprint(f"进程 rank=0 创建适配器保存目录: {adapters_save_path}")
+
+    # Wait for directory creation to complete before proceeding
+    if is_distributed():
+        torch.distributed.barrier()
+        debugprint(f"进程 rank={rank} 等待目录创建完成")
+
+    debugprint(f"进程 rank={rank} 适配器将保存到: {adapters_save_path}")
 
     # =========================== Train shared adapter ===========================
     adapter_name = "shared_adapter"
@@ -300,8 +312,17 @@ def run_sft_dynamic_conpet(
     training_args_shared.overwrite_output_dir = True  # Always overwrite shared adapter if re-training
     debugprint(f"为共享适配器设置的 training_args.output_dir: {training_args_shared.output_dir}")
 
-    os.makedirs(training_args_shared.output_dir, exist_ok=True)
-    debugprint(f"训练共享适配器: {adapter_name}, 输出目录: {training_args_shared.output_dir} (rank0)")
+    # Only create directories in the main process
+    if is_main_process():
+        os.makedirs(training_args_shared.output_dir, exist_ok=True)
+        debugprint(f"进程 rank=0 创建共享适配器输出目录: {training_args_shared.output_dir}")
+
+    # Wait for directory creation to complete before proceeding
+    if is_distributed():
+        torch.distributed.barrier()
+        debugprint(f"进程 rank={rank} 等待共享适配器目录创建完成")
+
+    debugprint(f"进程 rank={rank} 训练共享适配器: {adapter_name}, 输出目录: {training_args_shared.output_dir}")
 
     # Create model args copy for shared adapter
     model_args_shared = copy.deepcopy(model_args)
@@ -348,28 +369,51 @@ def run_sft_dynamic_conpet(
 
         if os.path.exists(classifier_config_file):
             # Load and potentially expand classifier
-            debugprint(f"从以下路径加载并可能扩展数据集分类器: {classifier_path} (rank0)")
+            debugprint(f"进程 rank={rank} 从以下路径加载并可能扩展数据集分类器: {classifier_path}")
+
+            # 获取模型的数据类型
+            model_dtype = next(model.parameters()).dtype
+            debugprint(f"进程 rank={rank} 模型参数数据类型: {model_dtype}")
+
             loaded_classifier, old_dataset_names = load_classifier(
                 classifier_path,
                 hidden_size,
-                new_num_datasets=num_datasets
+                new_num_datasets=num_datasets,
+                dtype=model_dtype
             )
             if loaded_classifier:
                 dataset_classifier = loaded_classifier
                 debugprint(f"加载的分类器原支持数据集: {old_dataset_names} (rank0)")
                 debugprint(f"扩展/用于当前数据集: {dataset_names} (rank0)")
             else:
-                 debugprint(f"警告: load_classifier 未能从 {classifier_path} 加载分类器，将创建一个新的。")
-                 dataset_classifier = DatasetClassifier(hidden_size, num_datasets)
-                 debugprint(f"因加载失败，创建了新的数据集分类器，包含 {num_datasets} 个数据集 (rank0)")
+                 debugprint(f"进程 rank={rank} 警告: load_classifier 未能从 {classifier_path} 加载分类器，将创建一个新的。")
+                 # 获取模型的数据类型
+                 model_dtype = next(model.parameters()).dtype
+                 debugprint(f"进程 rank={rank} 模型参数数据类型: {model_dtype}")
+
+                 # 创建与模型相同数据类型的分类器
+                 dataset_classifier = DatasetClassifier(hidden_size, num_datasets, dtype=model_dtype)
+                 debugprint(f"进程 rank={rank} 因加载失败，创建了新的数据集分类器，包含 {num_datasets} 个数据集，数据类型: {model_dtype}")
         else:
-            # Create new dataset classifier
-            dataset_classifier = DatasetClassifier(hidden_size, num_datasets)
-            debugprint(f"创建了新的数据集分类器，包含 {num_datasets} 个数据集 (rank0)")
+            # Create new dataset classifier with the same dtype as model
+            # 获取模型的数据类型
+            model_dtype = next(model.parameters()).dtype
+            debugprint(f"进程 rank={rank} 模型参数数据类型: {model_dtype}")
+
+            # 创建与模型相同数据类型的分类器
+            dataset_classifier = DatasetClassifier(hidden_size, num_datasets, dtype=model_dtype)
+            debugprint(f"进程 rank={rank} 创建了新的数据集分类器，包含 {num_datasets} 个数据集，数据类型: {model_dtype}")
 
         # Move classifier to the correct device
         dataset_classifier.to(training_args_shared.device)
-        debugprint(f"已将数据集分类器移动到设备: {training_args_shared.device}")
+        debugprint(f"进程 rank={rank} 已将数据集分类器移动到设备: {training_args_shared.device}")
+
+        # Synchronize classifier parameters across all processes if in distributed mode
+        if is_distributed():
+            # Broadcast the classifier parameters from rank 0 to all other processes
+            for param in dataset_classifier.parameters():
+                torch.distributed.broadcast(param.data, src=0)
+            debugprint(f"进程 rank={rank} 已同步数据集分类器参数")
 
         # Build dataset index mapping for identifying which dataset a sample belongs to during training
         start_idx = 0
@@ -517,16 +561,20 @@ def run_sft_dynamic_conpet(
         trainer.save_metrics("train", train_result.metrics)
         debugprint("保存共享适配器训练状态")
         trainer.save_state()
-        if trainer.is_world_process_zero() and finetuning_args_shared.plot_loss:
-            debugprint("绘制共享适配器损失图")
+        if is_main_process() and finetuning_args_shared.plot_loss:
+            debugprint("进程 rank=0 绘制共享适配器损失图")
             plot_loss(training_args_shared.output_dir, keys=["loss", "eval_loss", "eval_accuracy", "classification_loss", "total_loss"])
     else:
         debugprint("跳过共享适配器训练 (do_train=False)")
 
     # Clean up memory for task-specific adapter training
     debugprint("清理内存为任务特定适配器训练做准备")
+    if is_distributed():
+        torch.distributed.barrier()
     del model
     del trainer
+    AcceleratorState._reset_state()   # 清掉全局 state
+    PartialState._reset_state()       # 同时清 partial state               # 0.26+ 公共 API
     if 'dataset_classifier' in locals():
         del dataset_classifier
     gc.collect()
@@ -560,8 +608,17 @@ def run_sft_dynamic_conpet(
     training_args_task.overwrite_output_dir = True
     debugprint(f"为任务适配器设置的 training_args.output_dir: {training_args_task.output_dir}")
 
-    os.makedirs(training_args_task.output_dir, exist_ok=True)
-    debugprint(f"训练任务特定适配器: {adapter_name_task}, 输出目录: {training_args_task.output_dir} (rank0)")
+    # Only create directories in the main process
+    if is_main_process():
+        os.makedirs(training_args_task.output_dir, exist_ok=True)
+        debugprint(f"进程 rank=0 创建任务特定适配器输出目录: {training_args_task.output_dir}")
+
+    # Wait for directory creation to complete before proceeding
+    if is_distributed():
+        torch.distributed.barrier()
+        debugprint(f"进程 rank={rank} 等待任务特定适配器目录创建完成")
+
+    debugprint(f"进程 rank={rank} 训练任务特定适配器: {adapter_name_task}, 输出目录: {training_args_task.output_dir}")
 
     # Create model args copy for task-specific adapter
     model_args_task = copy.deepcopy(model_args)
@@ -609,7 +666,9 @@ def run_sft_dynamic_conpet(
     # Override the decoding parameters of Seq2SeqTrainer for task adapter
     training_args_task.generation_max_length = training_args_task.generation_max_length or data_args.cutoff_len
     training_args_task.generation_num_beams = data_args.eval_num_beams or training_args_task.generation_num_beams
-    training_args_task.remove_unused_columns = False  # important for multimodal dataset
+    training_args_task.remove_unused_columns = False  # important for multimodal dataset             # 全局已初始化
+    #training_args_task.deepspeed = None           # 不再传 plugin
+
     debugprint(f"任务适配器训练设置: generation_max_length={training_args_task.generation_max_length}, generation_num_beams={training_args_task.generation_num_beams}")
 
     # Metric utils (likely the same as for shared adapter)
@@ -685,15 +744,15 @@ def run_sft_dynamic_conpet(
         trainer.save_metrics("train", train_result.metrics)
         debugprint("保存任务适配器训练状态")
         trainer.save_state()
-        if trainer.is_world_process_zero() and finetuning_args_task.plot_loss:
-            debugprint("绘制任务适配器损失图")
+        if is_main_process() and finetuning_args_task.plot_loss:
+            debugprint("进程 rank=0 绘制任务适配器损失图")
             plot_keys = [k for k in ["loss", "eval_loss", "eval_accuracy"] if k in train_result.metrics or hasattr(trainer.state, k)]
             if "dynamic_conpet_loss" in train_result.metrics: plot_keys.append("dynamic_conpet_loss")
             if "shared_l2_loss" in train_result.metrics: plot_keys.append("shared_l2_loss")
             if plot_keys:
                  plot_loss(training_args_task.output_dir, keys=plot_keys)
             else:
-                 debugprint("警告: 没有可绘制的损失键")
+                 debugprint("进程 rank=0 警告: 没有可绘制的损失键")
     else:
         debugprint("跳过任务特定适配器训练 (do_train=False)")
 
@@ -742,10 +801,10 @@ def run_sft_dynamic_conpet(
         debugprint("CUDA 缓存已清空")
 
     # Restore original output directory (optional, maybe not needed)
-    
+
     # Restore original output directory
     #logger.info_rank0(f"Dynamic ConPet training completed. Adapters saved to {adapters_save_path}")
     #logger.info_rank0(f"  - Shared adapter: {os.path.join(adapters_save_path, 'shared_adapter')}")
     #logger.info_rank0(f"  - Task-specific adapter: {os.path.join(adapters_save_path, task_id)}")
-    
+
     return

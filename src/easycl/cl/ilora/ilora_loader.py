@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import torch
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoModelForVision2Seq
 from trl import AutoModelForCausalLMWithValueHead
-
+from contextlib import nullcontext
 from llamafactory.extras import logging
 from llamafactory.extras.misc import count_parameters
 from llamafactory.model.loader import _get_init_kwargs, load_config, load_tokenizer

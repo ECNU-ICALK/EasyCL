@@ -1,23 +1,8 @@
-# Copyright 2024 HuggingFace Inc. and the LlamaFactory team.
-#
-# This code is inspired by the HuggingFace's transformers library.
-# https://github.com/huggingface/transformers/blob/v4.40.0/examples/pytorch/summarization/run_summarization.py
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 import os
 import copy
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Dict, Any
 import traceback
+import torch
 def debugprint(*args, **kwargs):
     pass
 from llamafactory.data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer
@@ -31,6 +16,11 @@ from llamafactory.train.sft.metric import ComputeAccuracy, ComputeSimilarity, ev
 from .lwf_trainer import LWFTrainer
 from llamafactory.hparams import DataArguments, FinetuningArguments, GeneratingArguments, ModelArguments
 from easycl.hparams import CLFinetuningArguments
+from tqdm import tqdm
+from easycl.cl.distributed_utils import (
+    is_distributed, get_rank, is_main_process, get_world_size,
+    get_deepspeed_zero_stage, gather_parameters, all_reduce_tensor, broadcast_object
+)
 
 
 if TYPE_CHECKING:
@@ -38,6 +28,21 @@ if TYPE_CHECKING:
 
 
 logger = get_logger(__name__)
+
+
+def add_index_to_example(example: Dict[str, Any], idx: int) -> Dict[str, Any]:
+    """
+    Add a unique index to each example in the dataset
+
+    Args:
+        example: The dataset example
+        idx: The index to add
+
+    Returns:
+        The example with an added index field
+    """
+    example["index"] = idx
+    return example
 
 
 def run_sft_lwf(
@@ -55,6 +60,37 @@ def run_sft_lwf(
     tokenizer = tokenizer_module["tokenizer"]
     template = get_template_and_fix_tokenizer(tokenizer, data_args)
     dataset_module = get_dataset(template, model_args, data_args, training_args, stage="sft", **tokenizer_module)
+
+    # Add unique index to each example in the dataset
+    if "train_dataset" in dataset_module:
+        logger.info("Adding unique indices to training dataset...")
+        dataset_module["train_dataset"] = dataset_module["train_dataset"].map(
+            add_index_to_example,
+            with_indices=True,
+            desc="Adding indices to training dataset"
+        )
+        logger.info(f"Added indices to {len(dataset_module['train_dataset'])} training examples")
+
+    if "eval_dataset" in dataset_module:
+        logger.info("Adding unique indices to evaluation dataset...")
+        if isinstance(dataset_module["eval_dataset"], dict):
+            # Handle multiple evaluation datasets
+            for key, dataset in dataset_module["eval_dataset"].items():
+                dataset_module["eval_dataset"][key] = dataset.map(
+                    add_index_to_example,
+                    with_indices=True,
+                    desc=f"Adding indices to {key} evaluation dataset"
+                )
+                logger.info(f"Added indices to {len(dataset_module['eval_dataset'][key])} {key} evaluation examples")
+        else:
+            # Single evaluation dataset
+            dataset_module["eval_dataset"] = dataset_module["eval_dataset"].map(
+                add_index_to_example,
+                with_indices=True,
+                desc="Adding indices to evaluation dataset"
+            )
+            logger.info(f"Added indices to {len(dataset_module['eval_dataset'])} evaluation examples")
+
     model = load_model(tokenizer, model_args, finetuning_args, training_args.do_train)
 
     if getattr(model, "is_quantized", False) and not training_args.do_train:
@@ -116,74 +152,135 @@ def run_sft_lwf(
 
     # Training
     if training_args.do_train:
-        # Modify LWF logic
+        # Modify LWF logic with distributed training support
         if cl_finetuning_args.use_lwf:
-            debugprint(f"LWF 已启用 (cl_finetuning_args.use_lwf = {cl_finetuning_args.use_lwf})。继续进行 LWF 设置。")
+            # 检测分布式环境
+            is_dist = is_distributed()
+            rank = get_rank()
+            is_main = is_main_process()
+            world_size = get_world_size()
+
+            debugprint(f"[rank {rank}] LWF 已启用 (cl_finetuning_args.use_lwf = {cl_finetuning_args.use_lwf})。继续进行 LWF 设置。")
+            debugprint(f"[rank {rank}] 分布式环境: {is_dist}, 进程数: {world_size}")
+
             if cl_finetuning_args.previous_task_model:
-                logger.info("Loading previous task model for LWF...")
-                debugprint(f"尝试从路径加载先前任务模型: {cl_finetuning_args.previous_task_model}")
+                if is_main:
+                    logger.info("Loading previous task model for LWF...")
+                debugprint(f"[rank {rank}] 尝试从路径加载先前任务模型: {cl_finetuning_args.previous_task_model}")
+
                 try:
-                    # Save current adapter_name_or_path and model_name_or_path
-                    current_adapter = copy.deepcopy(model_args.adapter_name_or_path)  # Deep copy to avoid reference issues
-                    current_model = model_args.model_name_or_path
-                    
-                    # Normalize paths and perform detailed checks
-                    previous_task_path = os.path.abspath(cl_finetuning_args.previous_task_model)
-                    adapter_config_path = os.path.join(previous_task_path, "adapter_config.json")
-                    adapter_model_path = os.path.join(previous_task_path, "adapter_model.safetensors")
-                    
-                    logger.info(f"Checking adapter files in: {previous_task_path}")
-                    logger.info(f"Adapter config path: {adapter_config_path}")
-                    logger.info(f"Adapter model path: {adapter_model_path}")
-                    
-                    if not os.path.exists(previous_task_path):
-                        raise ValueError(f"Previous task model path does not exist: {previous_task_path}")
-                    if not os.path.exists(adapter_config_path):
-                        raise ValueError(f"Cannot find adapter_config.json in {previous_task_path}")
-                    if not os.path.exists(adapter_model_path):
-                        raise ValueError(f"Cannot find adapter_model.safetensors in {previous_task_path}")
-                    
+                    # 在分布式环境中，只在主进程执行路径检查
+                    if is_main:
+                        # Save current adapter_name_or_path and model_name_or_path
+                        current_adapter = copy.deepcopy(model_args.adapter_name_or_path)  # Deep copy to avoid reference issues
+                        current_model = model_args.model_name_or_path
+
+                        # Normalize paths and perform detailed checks
+                        previous_task_path = os.path.abspath(cl_finetuning_args.previous_task_model)
+                        adapter_config_path = os.path.join(previous_task_path, "adapter_config.json")
+                        adapter_model_path = os.path.join(previous_task_path, "adapter_model.safetensors")
+
+                        logger.info(f"Checking adapter files in: {previous_task_path}")
+                        logger.info(f"Adapter config path: {adapter_config_path}")
+                        logger.info(f"Adapter model path: {adapter_model_path}")
+
+                        if not os.path.exists(previous_task_path):
+                            raise ValueError(f"Previous task model path does not exist: {previous_task_path}")
+                        if not os.path.exists(adapter_config_path):
+                            raise ValueError(f"Cannot find adapter_config.json in {previous_task_path}")
+                        if not os.path.exists(adapter_model_path):
+                            raise ValueError(f"Cannot find adapter_model.safetensors in {previous_task_path}")
+                    else:
+                        # 非主进程使用默认值
+                        current_adapter = model_args.adapter_name_or_path
+                        current_model = model_args.model_name_or_path
+                        previous_task_path = os.path.abspath(cl_finetuning_args.previous_task_model)
+
+                    # 在分布式环境中同步路径信息
+                    if is_dist:
+                        debugprint(f"[rank {rank}] 同步先前任务模型路径信息")
+                        previous_task_path = broadcast_object(previous_task_path, src=0)
+                        current_model = broadcast_object(current_model, src=0)
+                        current_adapter = broadcast_object(current_adapter, src=0)
+                        debugprint(f"[rank {rank}] 同步后的路径: {previous_task_path}")
+
                     # Create new ModelArguments instance
                     prev_model_args = copy.deepcopy(model_args)
                     prev_model_args.model_name_or_path = current_model  # Use the same base model
                     prev_model_args.adapter_name_or_path = [previous_task_path]  # Use list format
-                    
+
                     # Ensure finetuning_args copy uses correct configuration
                     prev_finetuning_args = copy.deepcopy(finetuning_args)
                     prev_cl_finetuning_args = copy.deepcopy(cl_finetuning_args)
                     prev_cl_finetuning_args.use_lwf = False  # Avoid recursive loading
                     prev_finetuning_args.create_new_adapter = False  # Ensure direct adapter loading
-                    
+
+                    # 检测当前模型的DeepSpeed ZeRO阶段
+                    zero_stage = get_deepspeed_zero_stage(model)
+                    debugprint(f"[rank {rank}] 当前模型的DeepSpeed ZeRO阶段: {zero_stage}")
+
                     # Load previous task model
-                    logger.info(f"Loading model with adapter from: {prev_model_args.adapter_name_or_path}")
+                    if is_main:
+                        logger.info(f"Loading model with adapter from: {prev_model_args.adapter_name_or_path}")
+                    debugprint(f"[rank {rank}] 加载先前任务模型，adapter路径: {prev_model_args.adapter_name_or_path}")
+
                     previous_task_model = load_model(
                         tokenizer,
                         prev_model_args,
                         prev_finetuning_args,
                         is_trainable=False  # Set to False as we don't need to train this model
                     )
-                    
+
                     # Restore original adapter_name_or_path
                     model_args.adapter_name_or_path = current_adapter
-                    
+
                     # Set to eval mode and move to correct device
                     previous_task_model.eval()
                     if hasattr(model, "device"):
                         previous_task_model.to(model.device)
-                    
+
+                    # 在ZeRO-3下，确保模型参数能够正确访问
+                    if zero_stage == 3:
+                        debugprint(f"[rank {rank}] ZeRO-3环境下，测试先前任务模型参数访问")
+                        # 测试gather_parameters是否正常工作
+                        with gather_parameters(previous_task_model):
+                            for name, param in previous_task_model.named_parameters():
+                                if param.shape == torch.Size([0]):
+                                    debugprint(f"[rank {rank}] 警告: 参数 {name} 形状为 [0]，可能是ZeRO-3分片占位符")
+                                else:
+                                    debugprint(f"[rank {rank}] 参数 {name} 形状正常: {param.shape}")
+                                break  # 只检查第一个参数
+
                     # Set previous task model
                     trainer.lwf.previous_task_model = previous_task_model
-                    logger.info(f"Previous task model loaded successfully from: {previous_task_path}")
-                    
+                    if is_main:
+                        logger.info(f"Previous task model loaded successfully from: {previous_task_path}")
+                    debugprint(f"[rank {rank}] 先前任务模型加载成功")
+
                     # Record historical model path in trainer for use in metrics
                     trainer.previous_task_model_path = previous_task_path
-                    
+
+                    # Call set_logits_dir for compatibility (no longer creates directory)
+                    trainer.lwf.set_logits_dir(training_args.output_dir)
+
+                    # Precompute logits for all training data (memory-only)
+                    if is_main:
+                        logger.info("Precomputing logits for all training data using previous task model (memory-only)...")
+                    debugprint(f"[rank {rank}] 开始预计算logits")
+
+                    train_dataloader = trainer.get_train_dataloader()
+                    trainer.lwf.precompute_logits(train_dataloader, trainer.accelerator.device)
+
+                    if is_main:
+                        logger.info(f"Logits precomputation completed. Cached {len(trainer.lwf.cached_logits)} samples in memory.")
+                    debugprint(f"[rank {rank}] Logits预计算完成，缓存了 {len(trainer.lwf.cached_logits)} 个样本")
+
                 except Exception as e:
-                    logger.error(f"Failed to load previous task model: {str(e)}")
+                    logger.error(f"[rank {rank}] Failed to load previous task model: {str(e)}")
                     logger.error("Stack trace:")
                     logger.error(traceback.format_exc())
                     logger.error("LWF requires a valid previous task model. Training will be terminated.")
-                    raise RuntimeError("LWF initialization failed: unable to load previous task model")
+                    raise RuntimeError(f"[rank {rank}] LWF initialization failed: unable to load previous task model")
             else:
                 logger.error("LWF enabled but no previous task model provided. Training will be terminated.")
                 raise ValueError("LWF requires a previous task model path")
@@ -195,16 +292,41 @@ def run_sft_lwf(
                 dataset_module["train_dataset"], train_result.metrics, stage="sft"
             )
 
-        # Add LWF-related metrics
+        # Add LWF-related metrics with distributed training support
         if cl_finetuning_args.use_lwf:
-            debugprint(f"LWF 已使用 (cl_finetuning_args.use_lwf = {cl_finetuning_args.use_lwf})，正在添加 LWF 指标。")
+            # 检测分布式环境
+            is_dist = is_distributed()
+            rank = get_rank()
+            is_main = is_main_process()
+
+            debugprint(f"[rank {rank}] LWF 已使用 (cl_finetuning_args.use_lwf = {cl_finetuning_args.use_lwf})，正在添加 LWF 指标。")
+
             # Calculate LWF loss
-            lwf_loss = trainer.lwf.lwf_loss(trainer.model(**next(iter(trainer.get_train_dataloader()))).logits, next(iter(trainer.get_train_dataloader()))).item()
-            train_result.metrics["lwf_loss"] = lwf_loss
-            # Record historical model path
+            batch = next(iter(trainer.get_train_dataloader()))
+
+            # Ensure model parameters can be accessed correctly (DeepSpeed handles this for the forward pass)
+            # Remove explicit gather_parameters as it causes issues after training loop
+            outputs = trainer.model(**batch) # Directly call model forward pass
+
+            # Use cached logits if available
+            if len(trainer.lwf.cached_logits) > 0:
+                lwf_loss = trainer.lwf.lwf_loss_with_cached_logits(outputs.logits, batch).item()
+                train_result.metrics["lwf_loss_cached"] = lwf_loss
+            else:
+                lwf_loss = trainer.lwf.lwf_loss(outputs.logits, batch).item()
+                train_result.metrics["lwf_loss"] = lwf_loss
+
+            # Record historical model path and cache stats
             train_result.metrics["previous_task_model_path"] = trainer.previous_task_model_path
-            logger.info(f"LWF Loss: {lwf_loss}")
-            logger.info(f"Previous Task Model Path: {trainer.previous_task_model_path}")
+            train_result.metrics["lwf_cached_samples"] = len(trainer.lwf.cached_logits)
+
+            # 在分布式环境中，只在主进程记录日志
+            if is_main:
+                logger.info(f"LWF Loss: {lwf_loss}")
+                logger.info(f"Previous Task Model Path: {trainer.previous_task_model_path}")
+                logger.info(f"LWF Cached Samples: {len(trainer.lwf.cached_logits)}")
+
+            debugprint(f"[rank {rank}] LWF指标添加完成，损失值: {lwf_loss}")
 
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)

@@ -52,7 +52,7 @@
       "needs_prev_data": true,
       "needs_replay_list": true,
       "needs_shared_paths": ["olora_history_path"],
-      "needs_adapter_name_or_path": false
+      "needs_adapter_name_or_path": true
     },
     "ilora": {
       "needs_task_id": true,
@@ -219,8 +219,18 @@
       "previous_task_data",
       "prev_task_dir",
       "prev_task_id",
-      "replay_task_list"
-
+      "replay_task_list",
+      "lamol_show_gen",
+      "lamol_num_samples_per_task",
+      "lamol_generation_temperature",
+      "lamol_samples_dir",
+      "lwf_temperature",
+      "lwf_alpha",
+      "ewc_lambda",
+      "ewc_num_samples",
+      "replay_ratio",
+      "previous_task_dataset",
+      "maxsamples_list"
     ],
     "force_disable_methods": [
       "ewc",

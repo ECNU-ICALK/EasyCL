@@ -10,7 +10,7 @@ import datetime
 import copy
 import random
 from transformers import (
-    AutoTokenizer, 
+    AutoTokenizer,
     AutoModelForCausalLM,
     GenerationConfig
 )
@@ -25,6 +25,21 @@ try:
 except NameError:
     def debugprint(*args, **kwargs):
         pass
+
+# 分布式训练辅助函数
+def is_distributed():
+    """检查是否在分布式环境中运行"""
+    return torch.distributed.is_available() and torch.distributed.is_initialized()
+
+def get_rank():
+    """获取当前进程在分布式训练中的rank，非分布式环境返回0"""
+    if is_distributed():
+        return torch.distributed.get_rank()
+    return 0
+
+def is_main_process():
+    """检查是否为主进程（rank 0）"""
+    return get_rank() == 0
 
 class LAMOLGenerator:
     """
@@ -141,9 +156,16 @@ class LAMOLGenerator:
         """
         Load the previous task's model for pseudo sample generation.
         Uses finetuning_args.previous_task_model path.
+        在分布式环境中，只在rank 0进程上加载模型。
         """
         if not self.previous_task_model_path:
             logger.warning("`previous_task_model` path not provided. Skipping LAMOL pseudo sample generation.")
+            return None, None
+
+        # 在分布式环境中，只在主进程(rank 0)上加载模型
+        if is_distributed() and not is_main_process():
+            logger.info(f"Process rank {get_rank()}: Skipping model loading in non-main process")
+            # 在非主进程中返回None，稍后会在generate_pseudo_samples中处理
             return None, None
 
         prev_model_args = copy.deepcopy(self.model_args)
@@ -202,6 +224,7 @@ class LAMOLGenerator:
         Get a single random example from the *raw* dataset file for 1-shot prompting.
         Uses dataset_info.json to find the file path based on data_args.dataset.
         Reads the file (JSON or JSONL) and returns a random example.
+        在分布式环境中，确保所有进程选择相同的随机样本。
         """
         # Determine the dataset name (likely the current task's dataset)
         dataset_name = None
@@ -239,8 +262,26 @@ class LAMOLGenerator:
                  logger.warning(f"Raw dataset file '{file_path}' is empty or not a list. Cannot get few-shot example.")
                  return None
 
-            # Select and return a random example
-            index = random.randint(0, len(data) - 1)
+            # 在分布式环境中，确保所有进程选择相同的随机样本
+            if is_distributed():
+                # 使用固定种子生成随机索引，确保所有进程选择相同的样本
+                # 使用当前任务ID作为种子的一部分，确保不同任务有不同的随机性
+                task_id_hash = hash(str(self.current_task_id)) if self.current_task_id else 0
+                # 使用当前时间的小时和分钟作为种子的另一部分，这样每分钟内的样本选择是一致的
+                current_time = datetime.datetime.now()
+                time_seed = current_time.hour * 60 + current_time.minute
+                # 组合种子
+                seed = (task_id_hash + time_seed) % (2**32)
+
+                # 设置随机种子
+                random_state = random.Random(seed)
+                index = random_state.randint(0, len(data) - 1)
+
+                logger.debug(f"Process rank {get_rank()}: Selected example index {index} with seed {seed}")
+            else:
+                # 非分布式环境，直接随机选择
+                index = random.randint(0, len(data) - 1)
+
             return data[index]
 
         except Exception as e:
@@ -288,17 +329,59 @@ class LAMOLGenerator:
     def generate_pseudo_samples(self):
         """
         Generate pseudo samples using the *previous task's model* and 1-shot instruction prompts from the current task's data (read from raw file).
+        在分布式环境中，只在rank 0进程上进行模型推理/生成。
         """
         num_samples = self.lamol_num_samples_per_task
-        # Input dataset object is no longer needed here
+        generated_texts = []
 
+        # 在分布式环境中，只在主进程(rank 0)上进行模型推理/生成
+        if is_distributed():
+            logger.info(f"Process rank {get_rank()}: Distributed environment detected for pseudo sample generation")
+
+            if is_main_process():
+                # 主进程负责生成伪样本
+                logger.info(f"Process rank {get_rank()}: Main process will generate pseudo samples")
+                generated_texts = self._generate_pseudo_samples_impl(num_samples)
+
+                # 记录生成的样本数量，用于后续广播
+                sample_count = len(generated_texts)
+                logger.info(f"Process rank {get_rank()}: Generated {sample_count} pseudo samples")
+            else:
+                # 非主进程等待
+                logger.info(f"Process rank {get_rank()}: Non-main process will skip generation")
+                generated_texts = []
+                sample_count = 0
+
+            # 确保所有进程同步等待
+            if is_distributed():
+                torch.distributed.barrier()
+
+            # TODO: 如果需要，可以在这里添加广播生成的伪样本到所有进程的代码
+            # 但由于后续的保存和加载操作也只在主进程进行，这里暂不实现广播
+
+            pseudo_samples = self.parse_generated_texts(generated_texts)
+            return pseudo_samples
+        else:
+            # 非分布式环境，直接生成
+            logger.info("Non-distributed environment, generating pseudo samples normally")
+            generated_texts = self._generate_pseudo_samples_impl(num_samples)
+            pseudo_samples = self.parse_generated_texts(generated_texts)
+            return pseudo_samples
+
+    def _generate_pseudo_samples_impl(self, num_samples):
+        """
+        实际执行伪样本生成的内部方法。
+        只应该在主进程或非分布式环境中调用。
+        """
         # Load the PREVIOUS task's model
         prev_model, tokenizer = self.setup_previous_model()
+        if prev_model is None or tokenizer is None:
+             logger.warning("Failed to load previous model or tokenizer, returning empty list")
+             return []
+
+        # 将模型移到GPU
         prev_model = prev_model.cuda()
         tokenizer.padding_side = "left"
-        # If loading failed, return empty list
-        if prev_model is None or tokenizer is None:
-             return []
 
         # Set up generation config
         generation_config = GenerationConfig(
@@ -308,7 +391,7 @@ class LAMOLGenerator:
             num_beams=1,
             do_sample=True,
             pad_token_id=tokenizer.pad_token_id,
-            eos_token_id=tokenizer.eos_token_id,    
+            eos_token_id=tokenizer.eos_token_id,
             max_new_tokens=128 # Limit generated length
         )
 
@@ -368,10 +451,8 @@ class LAMOLGenerator:
         del attention_mask
         torch.cuda.empty_cache()
 
-        pseudo_samples = self.parse_generated_texts(generated_texts)
-
-        logger.info(f"Successfully generated {len(pseudo_samples)} valid LAMOL pseudo samples using previous task model.")
-        return pseudo_samples
+        logger.info(f"Successfully generated {len(generated_texts)} raw LAMOL pseudo samples.")
+        return generated_texts
 
     def parse_generated_texts(self, generated_data: List[Dict[str, str]]):
         """
@@ -409,7 +490,22 @@ class LAMOLGenerator:
     def save_pseudo_samples(self, samples):
         """
         Save pseudo samples to the specified directory structure.
+        在分布式环境中，只在主进程(rank 0)上保存伪样本。
         """
+        # 在分布式环境中，只在主进程上保存伪样本
+        if is_distributed() and not is_main_process():
+            logger.info(f"Process rank {get_rank()}: Skipping save_pseudo_samples in non-main process")
+            # 非主进程等待主进程完成保存
+            torch.distributed.barrier()
+            # 返回样本目录路径，确保所有进程使用相同的路径
+            if self.current_task_id:
+                output_dir = self.lamol_samples_dir
+                if not os.path.isabs(output_dir):
+                    output_dir = os.path.join(os.getcwd(), output_dir)
+                task_dir = os.path.join(output_dir, self.current_task_id)
+                return task_dir
+            return None
+
         if not self.current_task_id:
              logger.error("Cannot save LAMOL samples without `current_task_id`.")
              return None
@@ -446,6 +542,10 @@ class LAMOLGenerator:
 
         logger.info(f"Saved {len(all_samples)} LAMOL pseudo samples for task {self.current_task_id} to {pseudo_file_path}")
         logger.info(f"Created dataset info at {dataset_info_path}")
+
+        # 在分布式环境中，等待所有进程同步
+        if is_distributed():
+            torch.distributed.barrier()
 
         return task_dir
 

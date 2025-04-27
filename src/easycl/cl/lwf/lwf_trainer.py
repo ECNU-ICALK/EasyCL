@@ -35,6 +35,10 @@ from llamafactory.train.trainer_utils import create_custom_optimizer, create_cus
 from .lwf import LWF
 from llamafactory.hparams import FinetuningArguments
 from easycl.hparams import CLFinetuningArguments
+from easycl.cl.distributed_utils import (
+    is_distributed, get_rank, is_main_process, get_world_size,
+    get_deepspeed_zero_stage, gather_parameters, all_reduce_tensor
+)
 
 if TYPE_CHECKING:
     from torch.utils.data import Dataset
@@ -148,17 +152,40 @@ class LWFTrainer(Seq2SeqTrainer):
         return loss, generated_tokens, labels
 
     @override
-    def compute_loss(self, model, inputs, return_outputs=False,num_items_in_batch=None):
-        outputs = model(**inputs)
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        # 检测分布式环境和DeepSpeed ZeRO阶段
+        is_dist = is_distributed()
+        rank = get_rank()
+        zero_stage = get_deepspeed_zero_stage(model)
+
+        # 在ZeRO-3下，确保模型参数能够正确访问
+        # 不再需要手动 gather_parameters, DeepSpeed 会自动处理
+        # if zero_stage == 3:
+        #     debugprint(f"[rank {rank}] ZeRO-3环境下的compute_loss，使用gather_parameters")
+        #     with gather_parameters(model):
+        #         outputs = model(**inputs)
+        # else:
+        #     outputs = model(**inputs)
+        outputs = model(**inputs) # Directly call model forward pass
+
         loss = outputs.loss
-        
+
         # If LWF is enabled, add LWF loss
         if self.use_lwf:
-            debugprint("LWF 已启用，在 compute_loss 中计算 LWF 损失。")
-            lwf_loss = self.lwf.lwf_loss(outputs.logits, inputs)
-            debugprint(f"计算得到的 lwf_loss 值: {lwf_loss}")
+            debugprint(f"[rank {rank}] LWF 已启用，在 compute_loss 中计算 LWF 损失。")
+
+            # Check if we have cached logits
+            if len(self.lwf.cached_logits) > 0:
+                debugprint(f"[rank {rank}] 使用内存中缓存的 logits 计算 LWF 损失。")
+                lwf_loss = self.lwf.lwf_loss_with_cached_logits(outputs.logits, inputs)
+            else:
+                # Fallback to original method
+                debugprint(f"[rank {rank}] 未找到缓存的 logits，使用实时计算 LWF 损失。")
+                lwf_loss = self.lwf.lwf_loss(outputs.logits, inputs)
+
+            debugprint(f"[rank {rank}] 计算得到的 lwf_loss 值: {lwf_loss}")
             loss += lwf_loss
-            
+
         return (loss, outputs) if return_outputs else loss
 
     def save_predictions(

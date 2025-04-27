@@ -6,6 +6,10 @@
 [ [English](README.md) | [中文](README_zh.md) ]
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
+## Acknowledgement
+
+EasyCL is developed based on [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory). We would like to express our gratitude to the LLaMA-Factory team for their excellent open-source work. Before using EasyCL, we recommend reading the LLaMA-Factory's [README](https://github.com/hiyouga/LLaMA-Factory) and [documentation](https://llamafactory.readthedocs.io).
+
 ##  Status Overview
 
 **Note:** This is currently a development version, so you may encounter some bugs. If you find a bug, please raise an issue or contact me via email: caiyuxuanuestc@hotmail.com or WeChat: damowangdongdong. Thank you very much!
@@ -13,9 +17,8 @@
 <details>
 <summary>🚧 <strong>Known Issues / Upcoming Features</strong></summary>
 
-*   [TODO] Update and adapt multi-GPU logic.
 *   [TODO] Address unidentified LLaMAFactory bug triggered by GEM in multimodal scenarios.
-*   [TODO] Update and simplify EMA saving logic in ILoRA.
+*   [TODO] ILoRA triggers bugs during multi-GPU training with ZeRO-2 configuration.
 *   [Feature] Planning to add support for [New Method/Feature].
 *   Optimizing memory usage during [Specific Process].
 
@@ -30,6 +33,7 @@
 *   [Resolved] Gradient Episodic Memory (GEM) causes out-of-memory errors (2025-04-20).
 *   [Resolved] Improved O-LoRA logic and fixed dimension mismatch issues (2025-04-20).
 *   [Resolved] Fixed issues related to pseudo-sample generation methods and checked parameter imports for all existing methods (2025-04-20).
+*   [Resolved] Updated and adapted multi-GPU logic (2025-04-28).
 
 </details>
 
@@ -51,6 +55,8 @@
   - [Evaluate Only](#evaluate-only)
   - [Train Then Evaluate](#train-then-evaluate)
   - [Full Workflow (Train, Evaluate, Calculate Metrics)](#full-workflow-train-evaluate-calculate-metrics)
+- [Distributed Training Compatibility](#distributed-training-compatibility)
+  - [Setting Up Multi-GPU Training](#setting-up-multi-gpu-training)
 - [License](#license)
 
 ## Introduction
@@ -199,7 +205,7 @@ For data in the above format, the *dataset description* in `dataset_info.json` s
 }
 ```
 
-#### Dataset Requirements for Evaluation 
+#### Dataset Requirements for Evaluation
 
 EasyCL's evaluation process relies on the `dataset_info.json` file to locate and load required datasets. When running evaluation commands with `--cl_tasks <task_name>` (e.g., `--cl_tasks my_eval_task`), the evaluator will:
 
@@ -344,6 +350,75 @@ easycl-cli cl_workflow --mode full_workflow \
 **Preview Result**: Executes training sequentially, then evaluates base/task models, and finally calculates and saves CL metrics (Last, Avg, BWT, FWT) to the evaluation output directory.
 
 For detailed information about workflow configuration and CL metrics, see [src/easycl/cl_workflow/README.md](src/easycl/cl_workflow/README.md).
+
+## Distributed Training Compatibility
+
+EasyCL implements distributed training using DeepSpeed with compatibility across different ZeRO stages. The table below shows the compatibility status of each continual learning method with various DeepSpeed ZeRO configurations.
+
+| Method | Single GPU | ZeRO-0 | ZeRO-1 | ZeRO-2 | ZeRO-2+Offload | ZeRO-3 | ZeRO-3+Offload |
+|--------|:----------:|:------:|:------:|:------:|:--------------:|:------:|:--------------:|
+| Elastic Weight Consolidation (EWC) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Learning Without Forgetting (LWF) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Experience Replay | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| LAMOL | ✅ | ✅ | ✅ | ✅ | ✅ | 🚫 | 🚫 |
+| O-LoRA (Orthogonal subspace learning) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Gradient Episodic Memory (GEM) | ✅ | ✅ | 🚫 | 🚫 | 🚫 | 🚫 | 🚫 |
+| I-LoRA (Interpolation-based LoRA) | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | ✅ | ✅ |
+| MOE-LoRA (Mixture of Experts with LoRA) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| ABSCL (ABSA LLM-CL) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Dynamic ConPet | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| CL-MoE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Self-Synthetic Rehearsal (SSR) | ✅ | ✅ | ✅ | ✅ | ✅ | 🚫 | 🚫 |
+| Pseudo Replay | ✅ | ✅ | ✅ | ✅ | ✅ | 🚫 | 🚫 |
+
+**Legend**:
+- ✅ Compatible
+- ⚠️ Known issues (will be fixed in upcoming releases)
+- 🚫 Not compatible
+
+**Incompatibility Reasons**:
+- **GEM**: Requires gradient projection operations which are incompatible with ZeRO-2 and above due to the way gradients are partitioned across devices.
+- **LAMOL, SSR, Pseudo Replay**: These methods require long sequence sample generation, which causes extremely high communication overhead when using ZeRO-3, making them impractical for this configuration.
+
+**Known Issues**:
+- **I-LoRA**: When switching between EMA adapters, ZeRO-2 encounters backward propagation identification errors. This issue is currently being addressed and will be fixed in an upcoming release.
+
+### Setting Up Multi-GPU Training
+
+To enable distributed training with DeepSpeed, follow these steps:
+
+1. **Add DeepSpeed Configuration to Your Training Config**:
+   ```yaml
+   deepspeed: ./path/to/your/deepspeed_config.json
+   ```
+
+2. **Specify GPUs to Use**:
+   You can specify which GPUs to use either by setting environment variables or by prefixing your command:
+
+   Using environment variables:
+   ```bash
+   export CUDA_VISIBLE_DEVICES=0,1,2,3
+   easycl-cli cl_workflow --mode train_only --train_params ./your_config.yaml
+   ```
+
+   Or directly in the command:
+   ```bash
+   CUDA_VISIBLE_DEVICES=0,1,2,3 easycl-cli cl_workflow --mode train_only --train_params ./your_config.yaml
+   ```
+
+3. **Sample DeepSpeed Configurations**:
+   We provide several example DeepSpeed configurations in the `example/deepspeed_config` directory for different ZeRO stages and optimization levels. You can use these as starting points for your distributed training:
+
+   - `ds_z0_config.json` - ZeRO Stage 0 configuration
+   - `ds_z2_config.json` - ZeRO Stage 2 configuration
+   - `ds_z2_offload_config.json` - ZeRO Stage 2 with CPU offloading
+   - `ds_z3_config.json` - ZeRO Stage 3 configuration
+   - `ds_z3_offload_config.json` - ZeRO Stage 3 with CPU offloading
+
+   Example usage:
+   ```yaml
+   deepspeed: ./example/deepspeed_config/ds_z0_config.json
+   ```
 
 ## License
 

@@ -12,6 +12,10 @@ O-LoRA is a continual learning method that extends LoRA by introducing orthogona
 - `prev_task_id` (str, optional): ID of the previous task for orthogonal constraint.
 - `current_task_id` (str, required): ID of the current task.
 
+## Implementation Notes
+- All orthogonal loss and L2 loss calculations use only the 'default' adapter.
+- The 'current' adapter from earlier versions has been removed as it was not used in actual calculations.
+
 ## Directory Structure
 - `olora.py`: Core implementation of O-LoRA, including orthogonal loss computation and adapter management.
 - `olora_trainer.py`: Custom trainer class that integrates O-LoRA with HuggingFace's Trainer.

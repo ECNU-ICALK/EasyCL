@@ -12,6 +12,10 @@ O-LoRA 是一种持续学习方法，它通过在不同任务的适应矩阵之�
 - `prev_task_id` (str, 可选)：用于正交约束的前一个任务ID。
 - `current_task_id` (str, 必需)：当前任务的ID。
 
+## 实现说明
+- 所有的正交损失和L2损失计算都只使用 'default' adapter。
+- 早期版本中使用的 'current' adapter 已被移除，因为它在实际计算中未被使用。
+
 ## 目录结构
 - `olora.py`：O-LoRA的核心实现，包括正交损失计算和适配器管理。
 - `olora_trainer.py`：将O-LoRA与HuggingFace的Trainer集成的自定义训练器类。

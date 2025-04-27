@@ -17,8 +17,8 @@ import copy
 from typing import TYPE_CHECKING, List, Optional
 import traceback
 from llamafactory.data import (
-    SFTDataCollatorWith4DAttentionMask, 
-    get_dataset, 
+    SFTDataCollatorWith4DAttentionMask,
+    get_dataset,
     get_template_and_fix_tokenizer,
 )
 from llamafactory.data.data_utils import merge_dataset
@@ -52,12 +52,12 @@ def run_sft_lamol(
     callbacks: Optional[List["TrainerCallback"]] = None,
 ):
     """Run SFT training using LAMOL (pseudo-replay style)."""
-    # --- 1. Load Tokenizer and Template ---    
+    # --- 1. Load Tokenizer and Template ---
     tokenizer_module = load_tokenizer(model_args)
     tokenizer = tokenizer_module["tokenizer"]
     template = get_template_and_fix_tokenizer(tokenizer, data_args)
 
-    # --- Determine Task IDs --- 
+    # --- Determine Task IDs ---
     # Try to extract current_task_id from dataset name if not provided
     if not cl_finetuning_args.current_task_id and data_args.dataset:
         if isinstance(data_args.dataset, list):
@@ -71,30 +71,30 @@ def run_sft_lamol(
             prev_dataset_name = os.path.splitext(os.path.basename(data_args.dataset[-2]))[0]
             cl_finetuning_args.prev_task_id = prev_dataset_name.upper()
             logger.info_rank0(f"Auto-extracted prev_task_id: {cl_finetuning_args.prev_task_id}")
-    
+
     is_first_task = not cl_finetuning_args.prev_task_id
 
-    # --- 2. Load Original Dataset --- 
+    # --- 2. Load Original Dataset ---
     logger.info_rank0("Loading original dataset for the current task...")
     orig_dataset_module = get_dataset(
-        template=template, 
-        model_args=model_args, 
-        data_args=data_args, 
-        training_args=training_args, 
-        stage="sft", 
+        template=template,
+        model_args=model_args,
+        data_args=data_args,
+        training_args=training_args,
+        stage="sft",
         **tokenizer_module
     )
     if "train_dataset" not in orig_dataset_module or len(orig_dataset_module["train_dataset"]) == 0:
          raise ValueError("Failed to load a valid training dataset for the current task.")
     logger.info_rank0(f"Loaded original dataset with {len(orig_dataset_module['train_dataset'])} samples.")
 
-    # --- 3. Handle LAMOL Pseudo-Sample Generation and Merging (if not the first task) --- 
+    # --- 3. Handle LAMOL Pseudo-Sample Generation and Merging (if not the first task) ---
     merged_dataset_module = orig_dataset_module # Start with the original dataset
 
     if not is_first_task:
         logger.info_rank0(f"Current task ({cl_finetuning_args.current_task_id}) is not the first. Proceeding with LAMOL pseudo-sample generation.")
-        
-        # --- 3a. Initialize LAMOL Generator --- 
+
+        # --- 3a. Initialize LAMOL Generator ---
         lamol_generator = LAMOLGenerator(
             model_args=model_args,
             data_args=data_args,
@@ -102,23 +102,25 @@ def run_sft_lamol(
             cl_finetuning_args=cl_finetuning_args,
         )
 
-        # --- 3b. Generate Pseudo Samples --- 
+        # --- 3b. Generate Pseudo Samples ---
+        # 注意：generate_pseudo_samples方法已经处理了分布式环境，只在rank 0上生成
         logger.info_rank0("Generating LAMOL pseudo samples...")
         pseudo_samples = lamol_generator.generate_pseudo_samples()
 
         if not pseudo_samples:
             logger.warning_rank0("No pseudo samples were generated. Training will continue with only the original dataset.")
         else:
-            # --- 3c. Save Pseudo Samples --- 
+            # --- 3c. Save Pseudo Samples ---
+            # 注意：save_pseudo_samples方法已经处理了分布式环境，只在rank 0上保存
             logger.info_rank0("Saving generated LAMOL pseudo samples...")
             pseudo_dir = lamol_generator.save_pseudo_samples(pseudo_samples)
 
             if pseudo_dir:
-                # --- 3d. Load Pseudo Samples Dataset --- 
+                # --- 3d. Load Pseudo Samples Dataset ---
                 data_args_pseudo = copy.deepcopy(data_args)
                 data_args_pseudo.dataset_dir = pseudo_dir # Use the directory where samples were saved
                 data_args_pseudo.dataset = [f"lamol_pseudo_{cl_finetuning_args.current_task_id}"] # Use the dataset name from dataset_info.json
-                
+
                 logger.info_rank0(f"Loading LAMOL pseudo samples dataset from: {pseudo_dir}")
                 try:
                     dataset_module_pseudo = get_dataset(
@@ -131,11 +133,11 @@ def run_sft_lamol(
                     )
                     logger.info_rank0(f"Loaded {len(dataset_module_pseudo.get('train_dataset', []))} pseudo samples.")
 
-                    # --- 3e. Merge Datasets --- 
+                    # --- 3e. Merge Datasets ---
                     if "train_dataset" in dataset_module_pseudo and len(dataset_module_pseudo["train_dataset"]) > 0:
                         merged_data_args = copy.deepcopy(data_args)
                         merged_data_args.mix_strategy = "concat" # Simple concatenation
-                        
+
                         train_datasets = [
                             orig_dataset_module["train_dataset"],
                             dataset_module_pseudo["train_dataset"]
@@ -148,7 +150,7 @@ def run_sft_lamol(
                         merged_dataset_module = {
                             "train_dataset": merged_train_dataset,
                             # Keep original eval dataset unless pseudo eval exists
-                            "eval_dataset": orig_dataset_module.get("eval_dataset") 
+                            "eval_dataset": orig_dataset_module.get("eval_dataset")
                         }
                         logger.info_rank0(
                             f"Merged original ({len(orig_dataset_module['train_dataset'])}) and "
@@ -165,7 +167,7 @@ def run_sft_lamol(
     else:
         logger.info_rank0("This is the first task, skipping LAMOL pseudo-sample generation.")
 
-    # --- 4. Load Model --- 
+    # --- 4. Load Model ---
     # Load the model AFTER potential pseudo-sample generation (if base model path was not set)
     # The generator might have used the current model state.
     logger.info_rank0("Loading model for training...")
@@ -174,7 +176,7 @@ def run_sft_lamol(
     if getattr(model, "is_quantized", False) and not training_args.do_train:
         setattr(model, "_hf_peft_config_loaded", True) # Compatibility hack
 
-    # --- 5. Initialize Data Collator --- 
+    # --- 5. Initialize Data Collator ---
     data_collator = SFTDataCollatorWith4DAttentionMask(
         template=template,
         model=model if not training_args.predict_with_generate else None,
@@ -186,12 +188,12 @@ def run_sft_lamol(
         **tokenizer_module,
     )
 
-    # --- 6. Configure Training Arguments --- 
+    # --- 6. Configure Training Arguments ---
     training_args.generation_max_length = training_args.generation_max_length or data_args.cutoff_len
     training_args.generation_num_beams = data_args.eval_num_beams or training_args.generation_num_beams
     training_args.remove_unused_columns = False # Important for multimodal
 
-    # --- 7. Configure Metrics --- 
+    # --- 7. Configure Metrics ---
     metric_module = {}
     if training_args.predict_with_generate:
         metric_module["compute_metrics"] = ComputeSimilarity(tokenizer=tokenizer)
@@ -199,13 +201,13 @@ def run_sft_lamol(
         metric_module["compute_metrics"] = ComputeAccuracy()
         metric_module["preprocess_logits_for_metrics"] = eval_logit_processor
 
-    # --- 8. Configure Generation Arguments --- 
+    # --- 8. Configure Generation Arguments ---
     gen_kwargs = generating_args.to_dict(obey_generation_config=True)
     gen_kwargs["eos_token_id"] = [tokenizer.eos_token_id] + tokenizer.additional_special_tokens_ids
     gen_kwargs["pad_token_id"] = tokenizer.pad_token_id
     gen_kwargs["logits_processor"] = get_logits_processor()
 
-    # --- 9. Initialize Trainer --- 
+    # --- 9. Initialize Trainer ---
     # Use the potentially merged dataset module
     trainer = LAMOLTrainer(
         model=model,
@@ -220,7 +222,7 @@ def run_sft_lamol(
         # gen_kwargs=gen_kwargs, # Pass gen_kwargs if needed by trainer
     )
 
-    # --- 10. Training --- 
+    # --- 10. Training ---
     if training_args.do_train:
         # No LAMOL-specific initialization needed in the trainer itself anymore
         logger.info_rank0("Starting LAMOL SFT training...")
@@ -242,7 +244,7 @@ def run_sft_lamol(
         if trainer.is_world_process_zero() and finetuning_args.plot_loss:
             plot_loss(training_args.output_dir, keys=["loss", "eval_loss", "eval_accuracy"]) # Adjust keys if needed
 
-    # --- 11. Evaluation --- 
+    # --- 11. Evaluation ---
     if training_args.predict_with_generate:
         tokenizer.padding_side = "left" # Use left-padding in generation
 
@@ -255,7 +257,7 @@ def run_sft_lamol(
         else:
              logger.warning_rank0("Evaluation dataset not found, skipping evaluation.")
 
-    # --- 12. Prediction --- 
+    # --- 12. Prediction ---
     if training_args.do_predict:
         logger.warning_rank0_once("Batch generation can be slow. Consider using `scripts/vllm_infer.py` instead.")
         predict_dataset = merged_dataset_module.get("eval_dataset", None) # Usually predict on eval set
@@ -267,5 +269,5 @@ def run_sft_lamol(
         else:
              logger.warning_rank0("Prediction dataset not found, skipping prediction.")
 
-    # --- 13. Create Model Card --- 
+    # --- 13. Create Model Card ---
     create_modelcard_and_push(trainer, model_args, data_args, training_args, finetuning_args)

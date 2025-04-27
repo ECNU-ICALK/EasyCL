@@ -33,6 +33,11 @@ from llamafactory.train.trainer_utils import create_custom_optimizer, create_cus
 from .ewc import EWC
 from llamafactory.hparams import FinetuningArguments
 from easycl.hparams import CLFinetuningArguments
+from ..distributed_utils import (
+    is_distributed, get_rank, get_world_size, is_main_process,
+    get_deepspeed_zero_stage, gather_parameters, all_reduce_tensor
+)
+import traceback
 
 if TYPE_CHECKING:
     from torch.utils.data import Dataset
@@ -81,16 +86,16 @@ class EWCSeq2SeqTrainer(Seq2SeqTrainer):
 
             self.accelerator.clip_grad_norm_ = MethodType(clip_grad_norm_old_version, self.accelerator)
             self.add_callback(BAdamCallback)
-        
+
         # 添加EWC初始化
         self.use_ewc = use_ewc
         if self.use_ewc:
             self.ewc = EWC(self.model, lambda_ewc=ewc_lambda)
             logger.info("EWC has been successfully enabled.")
 
-        
 
-   
+
+
 
     @override
     def create_optimizer(self) -> "torch.optim.Optimizer":
@@ -141,19 +146,27 @@ class EWCSeq2SeqTrainer(Seq2SeqTrainer):
         return loss, generated_tokens, labels
 
     @override
-    def compute_loss(self, model, inputs, return_outputs=False,num_items_in_batch=None):
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         outputs = model(**inputs)
         loss = outputs.loss
-        
+
         # Add EWC loss if enabled
-        if self.use_ewc:
-            ewc_loss = self.ewc.ewc_loss()
-            loss += ewc_loss
-         
-    
-                
+        ewc_loss_val = torch.tensor(0.0, device=loss.device)  # Initialize
+        if self.use_ewc and self.ewc.enabled:  # Check if EWC is active
+            try:
+                ewc_penalty = self.ewc.ewc_loss()
+                loss += ewc_penalty
+                ewc_loss_val = ewc_penalty.detach()  # Get value for logging
+                debugprint(f"[Rank {get_rank()}] Added EWC penalty: {ewc_loss_val.item()}")
+            except Exception as e:
+                logger.error(f"[Rank {get_rank()}] Failed to compute or add EWC loss: {e}")
+                logger.error(traceback.format_exc())
+
+        # Log the EWC loss component if desired
+        self.log({"ewc_penalty": ewc_loss_val.item()})
+
         return (loss, outputs) if return_outputs else loss
-    
+
     def prepare_for_new_task(self, train_dataloader=None, num_samples: int = 100) -> bool:
         """Prepare EWC for a new task by computing Fisher information and storing parameters"""
         if self.use_ewc:

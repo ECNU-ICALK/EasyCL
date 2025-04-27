@@ -1,5 +1,6 @@
 import os
 from typing import TYPE_CHECKING, Optional
+from contextlib import nullcontext
 
 import torch
 from peft import LoraConfig, PeftModel, TaskType, get_peft_model
@@ -14,6 +15,10 @@ from llamafactory.model.model_utils.quantization import QuantizationMethod
 from llamafactory.model.model_utils.unsloth import get_unsloth_peft_model, load_unsloth_peft_model
 from llamafactory.model.model_utils.visual import patch_target_modules
 from easycl.cl.ilora.ilora import ILORA
+from easycl.cl.distributed_utils import (
+    is_distributed, get_rank, is_main_process, get_world_size,
+    get_deepspeed_zero_stage, gather_parameters, all_reduce_tensor, broadcast_object
+)
 
 def debugprint(*args, **kwargs):
     pass
@@ -441,53 +446,64 @@ def _setup_ilora_tuning(
                             original_active = model.active_adapter
                             debugprint(f"    保存原始活动适配器: {original_active}")
 
-                        with torch.no_grad():
-                            copied_count = 0
-                            # Iterate through all parameters to find default and ema LoRA weights
-                            default_params = {}
-                            ema_params_refs = {}
+                        # 检查 DeepSpeed ZeRO 阶段
+                        zero_stage = get_deepspeed_zero_stage(model)
+                        debugprint(f"    检测到 DeepSpeed ZeRO Stage: {zero_stage}")
 
-                            # First pass: collect default LoRA params and references to EMA params
-                            for name, param in model.named_parameters():
-                                if "lora" in name:
-                                    # Check if it's a default parameter (assuming structure like '...layers.X.[...]lora_[A/B].weight')
-                                    # Exclude parameters belonging to the 'ema' adapter by checking name prefix
-                                    # Default adapter params might not have a specific 'default.' prefix if it's the base PeftModel adapter
-                                    is_default_param = "base_model.model." in name and ".ema." not in name and param.requires_grad # Default should be trainable
-                                    is_ema_param = "base_model.model.ema." in name and not param.requires_grad # EMA should be frozen
+                        # 在 ZeRO-3 下，需要使用 gather_parameters 上下文管理器
+                        with gather_parameters(model) if zero_stage == 3 else nullcontext():
+                            with torch.no_grad():
+                                copied_count = 0
+                                # Iterate through all parameters to find default and ema LoRA weights
+                                default_params = {}
+                                ema_params_refs = {}
 
-                                    if is_default_param:
-                                        # Extract relative name for matching
-                                        rel_name = name.split("base_model.model.")[-1]
-                                        default_params[rel_name] = param.data.clone()
-                                        # debugprint(f"      Found default param: {rel_name} (from {name})")
-                                    elif is_ema_param:
-                                        # Extract relative name for matching (removing 'ema.')
-                                        rel_name = name.split("base_model.model.ema.")[-1]
-                                        ema_params_refs[rel_name] = param # Store reference to EMA param
-                                        # debugprint(f"      Found EMA param ref: {rel_name} (from {name})")
+                                # First pass: collect default LoRA params and references to EMA params
+                                for name, param in model.named_parameters():
+                                    if "lora" in name:
+                                        # Check if it's a default parameter (assuming structure like '...layers.X.[...]lora_[A/B].weight')
+                                        # Exclude parameters belonging to the 'ema' adapter by checking name prefix
+                                        # Default adapter params might not have a specific 'default.' prefix if it's the base PeftModel adapter
+                                        is_default_param = "base_model.model." in name and ".ema." not in name and param.requires_grad # Default should be trainable
+                                        is_ema_param = "base_model.model.ema." in name and not param.requires_grad # EMA should be frozen
 
-                            debugprint(f"    收集到 {len(default_params)} 个 default LoRA 参数和 {len(ema_params_refs)} 个 EMA LoRA 参数引用")
+                                        if is_default_param:
+                                            # Extract relative name for matching
+                                            rel_name = name.split("base_model.model.")[-1]
+                                            default_params[rel_name] = param.data.clone()
+                                            # debugprint(f"      Found default param: {rel_name} (from {name})")
+                                        elif is_ema_param:
+                                            # Extract relative name for matching (removing 'ema.')
+                                            rel_name = name.split("base_model.model.ema.")[-1]
+                                            ema_params_refs[rel_name] = param # Store reference to EMA param
+                                            # debugprint(f"      Found EMA param ref: {rel_name} (from {name})")
 
-                            # Second pass: copy from default to EMA using collected references
-                            for rel_name, default_param_data in default_params.items():
-                                if rel_name in ema_params_refs:
-                                    ema_param = ema_params_refs[rel_name]
-                                    if default_param_data.shape == ema_param.shape:
-                                        ema_param.data.copy_(default_param_data.to(ema_param.device))
-                                        copied_count += 1
-                                        # debugprint(f"      Copied {rel_name}")
-                                    else:
-                                        debugprint(f"      形状不匹配，跳过复制: default {rel_name} ({default_param_data.shape}) vs ema {rel_name} ({ema_param.shape})")
-                                # else:
-                                #      debugprint(f"      警告: Default 参数 {rel_name} 在 EMA 引用中未找到")
+                                debugprint(f"    收集到 {len(default_params)} 个 default LoRA 参数和 {len(ema_params_refs)} 个 EMA LoRA 参数引用")
 
-                            if copied_count > 0:
-                                debugprint(f"  已将 {copied_count} 个权重从新 default 复制到新 EMA")
-                                logger.info_rank0("Initialized new EMA adapter weights from new default adapter.")
-                            else:
-                                logger.warning_rank0("Could not copy any weights from new default to new EMA adapter.")
-                                debugprint("  未能从新 default 复制任何权重到新 EMA")
+                                # Second pass: copy from default to EMA using collected references
+                                for rel_name, default_param_data in default_params.items():
+                                    if rel_name in ema_params_refs:
+                                        ema_param = ema_params_refs[rel_name]
+                                        if default_param_data.shape == ema_param.shape:
+                                            ema_param.data.copy_(default_param_data.to(ema_param.device))
+                                            copied_count += 1
+                                            # debugprint(f"      Copied {rel_name}")
+                                        else:
+                                            debugprint(f"      形状不匹配，跳过复制: default {rel_name} ({default_param_data.shape}) vs ema {rel_name} ({ema_param.shape})")
+                                    # else:
+                                    #      debugprint(f"      警告: Default 参数 {rel_name} 在 EMA 引用中未找到")
+
+                                if copied_count > 0:
+                                    debugprint(f"  已将 {copied_count} 个权重从新 default 复制到新 EMA")
+                                    logger.info_rank0("Initialized new EMA adapter weights from new default adapter.")
+                                else:
+                                    logger.warning_rank0("Could not copy any weights from new default to new EMA adapter.")
+                                    debugprint("  未能从新 default 复制任何权重到新 EMA")
+
+                        # 在分布式环境中同步，确保所有进程完成权重复制
+                        if is_distributed():
+                            torch.distributed.barrier()
+                            debugprint(f"  进程 rank={get_rank()} 在 EMA 权重初始化后同步")
 
                         # Restore active adapter if it was changed
                         if original_active is not None and hasattr(model, "active_adapter"):
@@ -521,7 +537,7 @@ def _setup_ilora_tuning(
         # Ensure the correct adapter (default) is active for training
         if "default" in model.peft_config:
             model.set_adapter("default")
-            
+
         for name, param in model.named_parameters():
             if param.requires_grad:
                 # debugprint(f"    Casting {name} to fp32")
@@ -565,7 +581,8 @@ def init_ilora_adapter(
 ) -> "PreTrainedModel":
     """
     Initialize I-LORA adapter for the model.
-    
+    Handles different DeepSpeed ZeRO stages appropriately.
+
     Args:
         config: Model configuration.
         model: The model to add adapter to.
@@ -573,7 +590,7 @@ def init_ilora_adapter(
         finetuning_args: Fine-tuning arguments.
         finetuning_args: Continual Learning fine-tuning arguments.
         is_trainable: Whether the model is being trained.
-        
+
     Returns:
         Model with I-LORA adapter(s).
     """
@@ -581,12 +598,21 @@ def init_ilora_adapter(
     debugprint(f"  is_trainable: {is_trainable}")
     debugprint(f"  finetuning_args: {finetuning_args}")
 
+    # 检查分布式环境
+    is_dist = is_distributed()
+    rank = get_rank() if is_dist else 0
+    debugprint(f"  分布式环境: {is_dist}, rank: {rank}")
+
+    # 检查 DeepSpeed ZeRO 阶段
+    zero_stage = get_deepspeed_zero_stage(model)
+    debugprint(f"  检测到 DeepSpeed ZeRO Stage: {zero_stage}")
+
     # Cast model weights to fp32 if needed
     cast_trainable_params_to_fp32 = (
         is_trainable and getattr(model, "quantization_method", None) and model_args.upcast_layernorm
     )
     debugprint(f"  是否需要转换可训练参数为 fp32: {cast_trainable_params_to_fp32}")
-    
+
     ilora_instance = None
     # Only create I-LORA instance if we're trainable and using I-LORA
     if is_trainable and cl_finetuning_args.use_ilora:
@@ -601,7 +627,7 @@ def init_ilora_adapter(
         debugprint("  ILORA 实例已创建 (model 稍后更新)")
     else:
         debugprint("  条件不满足，不创建 ILORA 实例")
-    
+
     # Use our custom setup function for I-LORA
     debugprint("  调用 _setup_ilora_tuning")
     model = _setup_ilora_tuning(
@@ -615,7 +641,12 @@ def init_ilora_adapter(
         ilora_instance=ilora_instance,
     )
     debugprint("  _setup_ilora_tuning 调用完成")
-    
+
+    # 在分布式环境中同步，确保所有进程完成适配器设置
+    if is_dist:
+        torch.distributed.barrier()
+        debugprint(f"  进程 rank={rank} 在适配器设置后同步")
+
     # Add checks after _setup_ilora_tuning returns
     debugprint("  检查 _setup_ilora_tuning 返回后的适配器状态:")
     if hasattr(model, 'peft_config'):
@@ -627,11 +658,18 @@ def init_ilora_adapter(
     # Attach I-LORA instance to the model for later use in the trainer
     if is_trainable and cl_finetuning_args.use_ilora and ilora_instance is not None:
         debugprint("  条件满足 (is_trainable=True, use_ilora=True)，将 ILORA 实例附加到模型")
-        ilora_instance.model = model  # Update with the PEFT model
-        model.ilora = ilora_instance
-        debugprint("  ILORA 实例已更新并附加到模型")
+        # 在 ZeRO-3 下，需要使用 gather_parameters 上下文管理器
+        with gather_parameters(model) if zero_stage == 3 else nullcontext():
+            ilora_instance.model = model  # Update with the PEFT model
+            model.ilora = ilora_instance
+            debugprint("  ILORA 实例已更新并附加到模型")
     else:
         debugprint("  条件不满足或实例未创建，不附加 ILORA 实例")
+
+    # 再次同步，确保所有进程完成 ILORA 实例附加
+    if is_dist:
+        torch.distributed.barrier()
+        debugprint(f"  进程 rank={rank} 在 ILORA 实例附加后同步")
 
     debugprint("退出 init_ilora_adapter 函数")
     return model

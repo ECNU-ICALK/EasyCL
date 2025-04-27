@@ -86,7 +86,7 @@ def main():
             logger.info_rank0(f"Initializing distributed tasks at: {master_addr}:{master_port}")
 
             try:
-                import llamafactory.launcher as llamafactory_launcher
+                import easycl.cli.launcher as easycl_launcher
             except ImportError:
                 logger.error_rank0("Could not import llamafactory.launcher. Make sure llamafactory is installed correctly.")
                 sys.exit(1)
@@ -102,7 +102,7 @@ def main():
                     nproc_per_node=os.getenv("NPROC_PER_NODE", str(get_device_count())),
                     master_addr=master_addr,
                     master_port=master_port,
-                    file_name=llamafactory_launcher.__file__,
+                    file_name=easycl_launcher.__file__,
                     args=" ".join(sys.argv[1:]), # Pass remaining args to torchrun script
                 )
                 .split()
