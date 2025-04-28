@@ -364,10 +364,10 @@ EasyCL implements distributed training using DeepSpeed with compatibility across
 | O-LoRA (Orthogonal subspace learning) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Gradient Episodic Memory (GEM) | ✅ | ✅ | 🚫 | 🚫 | 🚫 | 🚫 | 🚫 |
 | I-LoRA (Interpolation-based LoRA) | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | ✅ | ✅ |
-| MOE-LoRA (Mixture of Experts with LoRA) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| MOE-LoRA (Mixture of Experts with LoRA) | ✅ | ✅ | ✅ | ✅ | ✅ | 🚫 | 🚫 |
 | ABSCL (ABSA LLM-CL) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Dynamic ConPet | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| CL-MoE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| CL-MoE | ✅ | ✅ | ✅ | ✅ | ✅ | 🚫 | 🚫 |
 | Self-Synthetic Rehearsal (SSR) | ✅ | ✅ | ✅ | ✅ | ✅ | 🚫 | 🚫 |
 | Pseudo Replay | ✅ | ✅ | ✅ | ✅ | ✅ | 🚫 | 🚫 |
 
@@ -379,6 +379,7 @@ EasyCL implements distributed training using DeepSpeed with compatibility across
 **Incompatibility Reasons**:
 - **GEM**: Requires gradient projection operations which are incompatible with ZeRO-2 and above due to the way gradients are partitioned across devices.
 - **LAMOL, SSR, Pseudo Replay**: These methods require long sequence sample generation, which causes extremely high communication overhead when using ZeRO-3, making them impractical for this configuration.
+- **MOE-LoRA, CL-MoE**: These methods use the original PEFT package implementation which can cause unexpected errors with certain base models when using ZeRO-3 configuration.
 
 **Known Issues**:
 - **I-LoRA**: When switching between EMA adapters, ZeRO-2 encounters backward propagation identification errors. This issue is currently being addressed and will be fixed in an upcoming release.

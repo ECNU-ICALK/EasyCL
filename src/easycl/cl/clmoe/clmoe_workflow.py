@@ -126,7 +126,7 @@ def run_statistics_calculation(output_dir: str, task_id: str, top_k_experts: int
         raise ValueError(f"Error during statistics calculation for {task_id}: {e}")
 
 
-def run_parameter_alignment(output_dir: str, current_task_id: str, prev_task_id: str, prev_task_model_path: str):
+def run_parameter_alignment(output_dir: str, current_task_id: str, prev_task_id: str, prev_task_model_path: str, top_k_experts: int = None):
     rank = get_rank()
     logger.info_rank0(f"Running parameter alignment: merging {prev_task_id} into {current_task_id}")
     not_aligned_dir = os.path.join(output_dir, "not_aligned")
@@ -187,9 +187,10 @@ def run_parameter_alignment(output_dir: str, current_task_id: str, prev_task_id:
             # Determine indices that are only in task1 (previous task)
             exclusive_indices = [i for i in index1 if i not in index2]
 
-            # Build the prefix list for targeted LoRA modules (Assuming 8 experts as in params.py)
-            # TODO: Potentially make expert_num dynamic if needed
-            total_experts = 8 # Hardcoded based on params.py, adjust if necessary
+            # Build the prefix list for targeted LoRA modules
+            # Use top_k_experts if provided, otherwise use a default value
+            total_experts = top_k_experts if top_k_experts is not None else 8
+            logger.info_rank0(f"Using top_k_experts={total_experts} for parameter alignment")
             exclusive_prefixes = [f"base_model.model.model.layers.{layer_idx}.mlp.experts.{i}." for layer_idx in range(32) for i in exclusive_indices] \
                             + [f"base_model.model.model.layers.{layer_idx}.mlp.lora_A.loraA.{i}." for layer_idx in range(32) for i in exclusive_indices] \
                             + [f"base_model.model.model.layers.{layer_idx}.mlp.lora_B.loraB.{i}." for layer_idx in range(32) for i in exclusive_indices]
@@ -499,7 +500,8 @@ def run_sft_clmoe( # Renamed from run_sft_moelora
                 output_dir=training_args.output_dir,
                 current_task_id=cl_finetuning_args.current_task_id,
                 prev_task_id=cl_finetuning_args.prev_task_id,
-                prev_task_model_path=cl_finetuning_args.previous_task_model
+                prev_task_model_path=cl_finetuning_args.previous_task_model,
+                top_k_experts=cl_finetuning_args.top_k_experts
             )
             logger.info_rank0("Statistics and Alignment steps completed successfully.")
 
