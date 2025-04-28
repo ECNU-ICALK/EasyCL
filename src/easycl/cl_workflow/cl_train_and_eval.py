@@ -98,7 +98,7 @@ class CLWorkflowArguments:
 
 class CLCommandGenerator:
     """持续学习命令生成器"""
-    
+
     def __init__(self, train_kwargs: Dict, eval_kwargs: Dict):
         self.train_kwargs = train_kwargs
         self.eval_kwargs = eval_kwargs
@@ -107,7 +107,7 @@ class CLCommandGenerator:
         if not self.tasks or not self.tasks[0]:
             #logger.warning("未在训练参数中找到有效的dataset参数，tasks列表将为空")
             self.tasks = []
-        
+
         # Load config only once
         self.config_path = os.path.join(os.path.dirname(__file__), "cl_params_config.json")
         try:
@@ -120,10 +120,10 @@ class CLCommandGenerator:
 
     def _dict_to_args(self, args_dict: Dict) -> str:
         """将字典转换为命令行参数字符串
-        
+
         Args:
             args_dict: 参数字典
-            
+
         Returns:
             str: 命令行参数字符串
         """
@@ -132,7 +132,7 @@ class CLCommandGenerator:
             # 跳过None值、注释参数和内部使用的参数
             if v is None or k.startswith("#") or k == "cl_method":
                 continue
-            
+
             # 处理布尔值
             if isinstance(v, bool):
                 args.append(f"--{k} {str(v).lower()}")
@@ -170,7 +170,7 @@ class CLCommandGenerator:
                 # 对于其他类型，直接转换为字符串
                 args.append(f"--{k} {str(v)}")
         return " ".join(args)
-        
+
     def _get_auto_managed_params(self, task_id: int, task: str, is_first_task: bool) -> Dict[str, Any]:
         """获取自动管理的、依赖于前序任务的参数 (Refactored based on new config)"""
         managed_args = {}
@@ -182,6 +182,20 @@ class CLCommandGenerator:
 
         # Get CL method requirements and mappings from loaded config
         cl_method = self.train_kwargs.get("cl_method")
+
+        # 如果没有指定cl_method且不是第一个任务，自动设置adapter_name_or_path
+        if not cl_method and not is_first_task:
+            # 获取前一个任务的输出目录
+            prev_task_dir_name = f"task_{task_id-1}_{self.tasks[task_id-1]}"
+            prev_task_output_dir = os.path.join(base_dir, prev_task_dir_name)
+
+            # 设置adapter_name_or_path为前一个任务的输出目录
+            managed_args["adapter_name_or_path"] = prev_task_output_dir
+            logger.info_rank0(f"Task {task_id}: No CL method specified, but not first task. Setting adapter_name_or_path={prev_task_output_dir}")
+
+            # 返回管理的参数
+            return managed_args
+
         if not cl_method:
             # If no CL method specified, only manage output_dir
             return managed_args
@@ -216,7 +230,7 @@ class CLCommandGenerator:
                 logger.info_rank0(f"First Task ({task}): Setting special param {param_name}={value} for method {cl_method.upper()}")
             # No further processing needed for first task regarding previous task dependencies
             return managed_args
-            
+
         # --- Subsequent Task Parameter Management (Not First Task) ---
 
         # Previous Task Directory (needed for model/adapter/data mappings)
@@ -234,8 +248,8 @@ class CLCommandGenerator:
                 # Check if this mapping relates to a model/adapter path
                 # Heuristic: check if 'model' or 'adapter' is in the name or description, or if related_to is output_dir
                 is_model_related_mapping = (
-                    "model" in mapping["param_name"] or 
-                    "adapter" in mapping["param_name"] or 
+                    "model" in mapping["param_name"] or
+                    "adapter" in mapping["param_name"] or
                     mapping.get("related_to") == "output_dir"
                 )
                 if is_model_related_mapping and mapping["param_name"] != "prev_task_dir": # Exclude LaMoL case for now
@@ -264,7 +278,7 @@ class CLCommandGenerator:
                 if mapping["param_name"] == "adapter_name_or_path" and mapping.get("related_to") == "output_dir":
                     adapter_mapping = mapping
                     break
-                    
+
             if adapter_mapping:
                 # 使用方法特定的映射
                 managed_args["adapter_name_or_path"] = prev_task_output_dir
@@ -304,21 +318,21 @@ class CLCommandGenerator:
                     logger.info_rank0(f"Task {task_id}: Preserving shared path parameter {shared_param}={managed_args[shared_param]} (from input args) for method {cl_method.upper()}")
             else:
                 logger.warning(f"Task {task_id}: Method {cl_method.upper()} requires shared path '{shared_param}', but it was not found in input arguments.")
-                 
+
         # --- Handle LaMoL's prev_task_dir specifically ---
         if cl_method == "lamol" and "prev_task_dir" in mapping_dict:
             if mapping_dict["prev_task_dir"].get("related_to") == "output_dir":
                 managed_args["prev_task_dir"] = prev_task_output_dir
                 logger.info_rank0(f"Task {task_id}: Setting prev_task_dir={prev_task_output_dir} for LAMOL")
 
-        
+
         return managed_args
-        
+
     def generate_train_command(self, task_id: int, task: str) -> str:
         """生成训练命令 (Refactored based on new config)"""
         args = self.train_kwargs.copy()
         is_first_task = (task_id == 0)
-        
+
         # 1. Set basic parameters (dataset)
         args["dataset"] = task
 
@@ -329,7 +343,7 @@ class CLCommandGenerator:
             method_requirements = self.config.get("cl_method_requirements", {}).get(cl_method, {})
             if not method_requirements:
                 logger.warning(f"Config entry not found for specified cl_method: '{cl_method}'. Parameter handling might be incorrect.")
-                
+
         # Ensure finetuning_type is set correctly for methods like iLora
         if cl_method == "ilora":
             args["finetuning_type"] = "lora"  # I-LORA requires LoRA
@@ -419,29 +433,29 @@ class CLCommandGenerator:
         current_cl_method = args.get("cl_method") # Get potentially cleared method
         effective_train_kwargs = self.train_kwargs.copy()
         effective_train_kwargs["cl_method"] = current_cl_method # Pass the correct method state
-        
+
         # Create a temporary generator instance with potentially updated state if needed
         temp_command_generator = CLCommandGenerator(effective_train_kwargs, self.eval_kwargs)
         auto_managed_params = temp_command_generator._get_auto_managed_params(task_id, task, is_first_task)
-        
+
         # Important: Update args, letting auto_managed_params override where necessary (like output_dir)
         args.update(auto_managed_params)
-            
+
         # 6. Ensure necessary base parameters exist (stage, do_train)
         args.setdefault("stage", "sft")
         args.setdefault("do_train", True)
-        
+
         # 7. Convert to command string
         # Make sure 'cl_method' itself is not passed as a command line arg if it was just for internal logic
         args_for_cli = args.copy()
         # args_for_cli.pop("cl_method", None) # Keep cl_method if needed by run_exp downstream? Check run_exp usage. Assuming run_exp doesn't need it directly as CLI arg.
 
         return f"easycl-cli cl_train {self._dict_to_args(args_for_cli)}"
-        
+
     def generate_eval_command(self, task_output_dir: str, task_id: Optional[int], is_lora: bool, base_model_path: Optional[str] = None) -> str:
         """生成评估命令 (No changes needed based on request)"""
         args = self.eval_kwargs.copy()
-        
+
         # 设置模型路径
         if is_lora:
             args["model_name_or_path"] = base_model_path
@@ -454,42 +468,42 @@ class CLCommandGenerator:
             args["model_name_or_path"] = str(task_output_dir)
             if "adapter_name_or_path" in args:
                 del args["adapter_name_or_path"]
-            
+
         # 设置保存目录
         eval_base_dir = args.get("save_dir", "eval_results")
         if task_id is not None:
             args["save_dir"] = os.path.join(eval_base_dir, f"task_{task_id}")
         else:
             args["save_dir"] = os.path.join(eval_base_dir, "base")
-            
+
         # 设置其他评估参数
         args.setdefault("batch_size", 16)
         args.setdefault("eval_mode", "single")
         args.setdefault("template", self.train_kwargs.get("template", ""))
-        
+
         # 确保使用cl_tasks而不是dataset
         if "dataset" in args:
             args["cl_tasks"] = args.pop("dataset")
         elif "cl_tasks" not in args and "dataset" in self.train_kwargs:
             args["cl_tasks"] = self.train_kwargs["dataset"]
-            
+
         # 移除旧的持续学习指标参数 (enable_transfer, enable_bwt, enable_fwt)
         # 新的 calculate_cl_metrics 参数会在 CLWorkflow 的 __init__ 中处理
         # CLEvaluationArguments 的 __post_init__ 会自动设置它
         args.pop("enable_transfer", None)
         args.pop("enable_bwt", None)
         args.pop("enable_fwt", None)
-        
+
         # 移除不需要的参数 (注释或None值)
         for key in list(args.keys()):
             if key.startswith("#") or args[key] is None:
                 args.pop(key)
-                
+
         return f"easycl-cli cl_eval {self._dict_to_args(args)}"
 
 class CLWorkflow:
     """持续学习工作流"""
-    
+
     def __init__(
         self,
         workflow_args: CLWorkflowArguments,
@@ -717,7 +731,7 @@ class CLWorkflow:
             missing_params = [p for p in required_train_params if p not in self.train_kwargs]
             if missing_params:
                 raise ValueError(f"Train config missing required parameters: {', '.join(missing_params)}")
-                    
+
             # Check if LoRA params are present if LoRA is intended (e.g., for iLora)
             # This check might be better placed inside the specific method's logic if needed
             if self.train_kwargs.get("cl_method") == "ilora" or self.train_kwargs.get("finetuning_type") == "lora":
@@ -726,7 +740,7 @@ class CLWorkflow:
                 if missing_lora:
                     raise ValueError(f"LoRA training requested but missing parameters: {', '.join(missing_lora)}")
 
-            
+
             # === Reintroduce CL method detection based on use_* flags ===
             detected_cl_method = None
             enabled_methods = []
@@ -735,7 +749,7 @@ class CLWorkflow:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                 supported_methods = config.get("cl_methods_registry", {}).get("methods", [])
-                
+
                 for method in supported_methods:
                     use_flag = f"use_{method}"
                     if self.train_kwargs.get(use_flag, False):
@@ -743,7 +757,7 @@ class CLWorkflow:
                         if detected_cl_method is None: # Set the first detected method
                             detected_cl_method = method
                             logger.info_rank0(f"Detected enabled CL method flag '{use_flag}'. Setting cl_method='{method}'.")
-                
+
                 if len(enabled_methods) > 1:
                     logger.warning(
                         f"Multiple CL method flags enabled: {', '.join(enabled_methods)}. "
@@ -751,7 +765,7 @@ class CLWorkflow:
                     )
                 elif not detected_cl_method and "cl_method" not in self.train_kwargs:
                     logger.warning("No 'use_<method>' flag found true in train_kwargs, and 'cl_method' is not explicitly set.")
-                
+
                 # Set the detected cl_method in train_kwargs if found and not already explicitly set
                 if detected_cl_method and "cl_method" not in self.train_kwargs:
                     self.train_kwargs["cl_method"] = detected_cl_method
@@ -785,33 +799,33 @@ class CLWorkflow:
                     logger.info_rank0(f"Using CL method: '{cl_method}'.")
             # Removed the logic for checking multiple use_* flags and setting defaults
 
-                
+
         # Validate eval parameters only if evaluation is involved
         if self.workflow_args.mode != "train_only":
             required_eval_params = ["save_dir"]
             if self.workflow_args.mode == "eval_only":
                 # In eval_only, base model and tasks must be provided in eval config
                 required_eval_params.extend(["model_name_or_path", "cl_tasks"])
-                
+
             missing_params = [p for p in required_eval_params if p not in self.eval_kwargs]
             if missing_params:
                 raise ValueError(f"Eval config missing required parameters: {', '.join(missing_params)}")
-                    
+
             # Perform checks previously in CLEvaluationArguments post_init if needed here
             # For example, checks related to eval_mode, multi_adapter_dir etc.
             # These are better handled when parsing CLEvaluationArguments
 
-            
+
         logger.info_rank0("Parameter validation finished.")
 
-                    
+
     def _load_params(self, params_file: str) -> Dict:
         """加载参数文件 (Supports JSON and YAML)"""
         if not params_file:
             return {}
-            
+
         file_ext = os.path.splitext(params_file)[1].lower()
-        
+
         try:
             with open(params_file, "r", encoding="utf-8") as f:
                 if file_ext == ".json":
@@ -833,12 +847,12 @@ class CLWorkflow:
         except Exception as e:
             logger.error(f"Error loading parameter file {params_file}: {e}")
             raise
-            
+
     def _get_commands(self) -> Tuple[List[str], List[str]]:
         """获取训练和评估命令列表 (Logic using command_generator remains the same)"""
         train_commands = []
         eval_commands = []
-        
+
         # Generate train commands if needed
         if self.workflow_args.mode != "eval_only":
             for i, task in enumerate(self.tasks):
@@ -846,7 +860,7 @@ class CLWorkflow:
                 # Currently, command_generator seems stateless w.r.t tasks besides reading self.tasks
                 train_cmd = self.command_generator.generate_train_command(i, task)
                 train_commands.append(train_cmd)
-                
+
         # Generate eval commands if needed
         if self.workflow_args.mode != "train_only":
             # Determine if LoRA is used based on train_kwargs (even in eval_only mode, train_kwargs holds reference paths)
@@ -857,14 +871,14 @@ class CLWorkflow:
                 bool(self.train_kwargs.get("adapter_name_or_path")) # If adapter is explicitly given
             )
             base_model_path_for_eval = self.train_kwargs.get("model_name_or_path")
-            
+
             # Evaluate base model if required by workflow mode
             if self.workflow_args.mode in ["full_workflow", "train_then_eval"]: # Evaluate base/initial state before task 0 training
                 logger.info_rank0("Generating eval command for initial model state (before task 0)...")
                 # Use adapter path if provided directly, otherwise assume base model eval
                 initial_eval_path = self.train_kwargs.get("adapter_name_or_path", base_model_path_for_eval)
                 is_evaluating_lora_initially = bool(self.train_kwargs.get("adapter_name_or_path"))
-                 
+
                 base_eval_cmd = self.command_generator.generate_eval_command(
                     task_output_dir=initial_eval_path,
                     task_id=None, # Indicate base/initial model
@@ -872,17 +886,17 @@ class CLWorkflow:
                     base_model_path=base_model_path_for_eval if is_evaluating_lora_initially else None
                 )
                 eval_commands.append(base_eval_cmd)
-                
+
             # Evaluate after each task if required (not eval_only mode)
             if self.workflow_args.mode != "eval_only":
                 for i, task in enumerate(self.tasks):
                     # Output dir for the task i model/adapter
                     task_output_dir = os.path.join(self.train_kwargs.get("output_dir", "outputs"), f"task_{i}_{task}")
-                     
+
                     # Determine if the output of this task is LoRA adapters or full model
                     # Assume LoRA if LoRA was potentially used during training phase
                     is_task_output_lora = is_lora_potentially_used
-                     
+
                     eval_cmd = self.command_generator.generate_eval_command(
                         task_output_dir=task_output_dir, # Path to the adapter (if LoRA) or fine-tuned model
                         task_id=i,
@@ -896,7 +910,7 @@ class CLWorkflow:
                 model_or_adapter_to_eval = self.eval_kwargs.get("adapter_name_or_path", self.eval_kwargs.get("model_name_or_path"))
                 is_evaluating_lora = bool(self.eval_kwargs.get("adapter_name_or_path"))
                 base_model_ref = self.eval_kwargs.get("model_name_or_path")
-                 
+
                 eval_cmd = self.command_generator.generate_eval_command(
                     task_output_dir=model_or_adapter_to_eval,
                     task_id=None, # Evaluating a single checkpoint across tasks
@@ -904,44 +918,44 @@ class CLWorkflow:
                     base_model_path=base_model_ref if is_evaluating_lora else None
                 )
                 eval_commands.append(eval_cmd)
-                
-            
+
+
         return train_commands, eval_commands
-        
-        
+
+
     def preview_commands(self):
         """预览将要执行的命令 (No changes needed)"""
         # Use a temporary flag to prevent _get_commands from logging preview messages internally if called again by run()
         original_preview_flag = self.workflow_args.previewonly
         self.workflow_args.previewonly = True # Temporarily set flag for _get_commands
-        
+
         train_commands, eval_commands = self._get_commands()
-        
+
         self.workflow_args.previewonly = original_preview_flag # Restore flag
-        
+
         if train_commands:
             print("\n--- Training Commands Preview ---")
             for i, cmd in enumerate(train_commands, 1):
                 print(f"Task {i-1}: {cmd}\n")
-                
+
         if eval_commands:
             print("\n--- Evaluation Commands Preview ---")
             for i, cmd in enumerate(eval_commands):
                 # Determine if it's base eval or task eval based on save_dir in command?
                 # Or just print sequentially
                 print(f"Eval Step {i}: {cmd}\n")
-                
+
     def run(self):
         """运行持续学习工作流"""
         # Preview commands first, regardless of mode
         self.preview_commands()
-        
+
         if self.workflow_args.previewonly:
             logger.info_rank0("Preview only mode. Exiting without execution.")
             return
-            
+
         logger.info_rank0("Starting command execution...")
-        
+
         # Execute workflow based on mode
         try:
             if self.workflow_args.mode == "train_only":
@@ -956,7 +970,7 @@ class CLWorkflow:
                 self._run_train_then_eval() # Use train_then_eval logic for now
             else:
                 raise ValueError(f"Unsupported workflow mode: {self.workflow_args.mode}")
-                
+
             # Calculate CL metrics if evaluation was performed and requested
             if self.workflow_args.mode != "train_only" and self.eval_kwargs.get("calculate_cl_metrics", False):
                 if self.metrics_calculator:
@@ -991,7 +1005,7 @@ class CLWorkflow:
                 self._run_command(cmd, f"Training Task {i+1}/{len(self.tasks)}")
         else:
             logger.info_rank0("No training commands generated for train_only mode.")
-                    
+
     def _run_eval_only(self):
         """运行评估模式"""
         # 修改解包顺序：忽略训练命令，获取评估命令列表
@@ -1003,21 +1017,21 @@ class CLWorkflow:
         else:
             logger.info_rank0("No evaluation commands generated for eval_only mode.")
         # CL Metrics calculation happens in run()
-                    
+
             # 计算持续学习指标
             #self._calculate_cl_metrics()
 
     def _run_train_then_eval(self):
         """运行训练后评估模式"""
         train_commands, eval_commands = self._get_commands()
-        
+
         # Execute training first
         if train_commands:
             for i, cmd in enumerate(train_commands):
                 self._run_command(cmd, f"Training Task {i+1}/{len(self.tasks)}")
         else:
             logger.info_rank0("No training commands generated for train_then_eval mode.")
-                    
+
         # Execute evaluation after all training
         if eval_commands:
             logger.info_rank0("Starting evaluation phase after training...")
@@ -1042,13 +1056,13 @@ class CLWorkflow:
         if not self.evaluator or not self.metrics_calculator:
             logger.error("Evaluator or Metrics Calculator not initialized. Skipping CL metrics.")
             return None
-             
+
         eval_base_dir = self.eval_kwargs.get("save_dir", "eval_results")
         # Base model results directory assumes a specific naming convention
         base_dir = os.path.join(eval_base_dir, "base")
         # Task results directories also assume a naming convention
         task_dirs = [os.path.join(eval_base_dir, f"task_{i}") for i in range(len(self.tasks))]
-        
+
         # Ensure metrics_calculator has the correct tasks list
         if not hasattr(self.metrics_calculator, 'tasks') or not self.metrics_calculator.tasks:
             logger.warning("Metrics calculator tasks list missing. Setting from workflow.")
@@ -1056,11 +1070,11 @@ class CLWorkflow:
         elif self.metrics_calculator.tasks != self.tasks:
             logger.warning("Metrics calculator tasks mismatch workflow tasks. Updating to workflow tasks.")
             self.metrics_calculator.tasks = self.tasks
-            
+
         logger.info_rank0(f"Calculating CL metrics using results from:")
         logger.info_rank0(f"  Base results directory: {base_dir}")
         logger.info_rank0(f"  Task results directories: {task_dirs}")
-        
+
         # Check if result directories exist
         if not os.path.exists(base_dir):
             logger.error(f"Base results directory not found: {base_dir}. Cannot calculate CL metrics.")
@@ -1069,7 +1083,7 @@ class CLWorkflow:
         if missing_task_dirs:
             logger.error(f"Missing task results directories: {missing_task_dirs}. Cannot calculate CL metrics.")
             return None
-             
+
         try:
             # Ensure calculate method exists and call it
             if hasattr(self.metrics_calculator, 'calculate'):
@@ -1106,16 +1120,16 @@ class CLWorkflow:
             self._log_cl_metrics_summary(metrics, save_path) # Log summary after saving
         except Exception as e:
             logger.error(f"Failed to save CL metrics to {save_path}: {e}")
-             
-            
+
+
     def _log_cl_metrics_summary(self, metrics: Dict[str, Any], save_path: str):
         """Logs a formatted summary of the CL metrics."""
         logger.info_rank0("\n=== Continual Learning Evaluation Summary ===")
-        
+
         # Task sequence and count
         logger.info_rank0(f"Task Sequence: {metrics.get('task_sequence', 'N/A')}")
         logger.info_rank0(f"Number of Tasks (N): {metrics.get('num_tasks', 'N/A')}")
-        
+
         # Base model performance
         logger.info_rank0("\n--- Base Model Performance (R_0,i) ---")
         base_results = metrics.get("base_model_results", {})
@@ -1129,7 +1143,7 @@ class CLWorkflow:
                 logger.info_rank0(f"  Task '{task}': Accuracy = {perf_str}{missing} ({correct}/{total})")
         else:
             logger.info_rank0("  Base model results not available.")
-            
+
         # Task result matrix
         logger.info_rank0("\n--- Task Evaluation Matrix (R_k,i) ---")
         matrix_results = metrics.get("task_results_matrix", {})
@@ -1146,7 +1160,7 @@ class CLWorkflow:
                     logger.info_rank0(f"  -> Eval on Task '{task}': Accuracy = {perf_str}{missing} ({correct}/{total})")
         else:
             logger.info_rank0("  Task results matrix not available.")
-                
+
         # CL Metrics Summary
         logger.info_rank0("\n--- Continual Learning Metrics ---")
         metrics_summary = metrics.get("metrics", {}).get("summary", {})
@@ -1165,17 +1179,17 @@ class CLWorkflow:
                     logger.info_rank0(f"    - {note}")
         else:
             logger.info_rank0("  Metrics summary not available.")
-         
+
         logger.info_rank0(f"\nDetailed results saved to: {save_path}")
         logger.info_rank0("==========================================")
 
     def _clean_directories(self):
         """清理输出和评估目录 (No changes needed)"""
         import shutil
-        
+
         logger.info_rank0("Starting directory cleanup...")
         cleaned_dirs = []
-        
+
         # Clean training output directory if training is involved
         if self.workflow_args.mode not in ["eval_only"]:
             output_dir = self.train_kwargs.get("output_dir")
@@ -1191,7 +1205,7 @@ class CLWorkflow:
                 logger.info_rank0(f"Training output directory '{output_dir}' not found, skipping cleanup.")
             else:
                 logger.warning("Training output directory not configured, skipping cleanup.")
-        
+
         # Clean evaluation results directory if evaluation is involved
         if self.workflow_args.mode not in ["train_only"]:
             save_dir = self.eval_args.save_dir # Use eval_args which should be correctly set
@@ -1207,7 +1221,7 @@ class CLWorkflow:
                 logger.info_rank0(f"Evaluation results directory '{save_dir}' not found, skipping cleanup.")
             else:
                 logger.warning("Evaluation results directory not configured, skipping cleanup.")
-                
+
         if not cleaned_dirs:
             logger.info_rank0("No directories were cleaned.")
         logger.info_rank0("Directory cleanup finished.")
@@ -1215,31 +1229,31 @@ class CLWorkflow:
 # CLTrainer class remains the same as it doesn't deal with config directly
 class CLTrainer:
     """持续学习训练器"""
-    
+
     def __init__(self, base_dir: str):
         """初始化持续学习训练器
-        
+
         Args:
             base_dir: 基础输出目录
         """
         self.base_dir = base_dir
         # Runtime state might be less useful now config drives parameters
         # self.runtime_state_file = os.path.join(base_dir, "cl_runtime_state.json")
-        
+
     def train_task(self, task: str, task_id: int, args: Dict[str, Any]) -> str:
         """训练单个任务 (Internally calls run_exp)
-        
+
         Args:
             task: 任务名称
             task_id: 任务ID
             args: 训练参数 (already prepared by CLCommandGenerator logic)
-            
+
         Returns:
             str: 任务输出目录 (as determined by args['output_dir'])
         """
         task_output_dir = args["output_dir"] # Get output dir from prepared args
         os.makedirs(task_output_dir, exist_ok=True)
-        
+
         logger.info_rank0(f"Starting training for task {task_id} ({task}) with output to {task_output_dir}")
 
         # Directly call run_exp with the fully prepared arguments
@@ -1253,12 +1267,12 @@ class CLTrainer:
         except Exception as e:
             logger.exception(f"Error during training execution (run_exp) for task {task_id} ({task}): {e}")
             raise # Re-raise the exception to halt the workflow
-        
+
         # Saving runtime state might be less critical if config drives everything
         # self._save_runtime_state(...)
-        
+
         return task_output_dir
-        
+
     # _save_runtime_state and _load_runtime_state can be kept or removed if state management changes
 
 # main function remains largely the same, parsing args and initiating the workflow
@@ -1269,18 +1283,18 @@ def main():
         CLTrainArguments, # Specifies the input training config file
         CLEvalArguments   # Specifies the input evaluation config file
     ))
-    
+
     # Check if a single JSON config file is provided for the whole workflow
     # This mode might need adjustment if train/eval params are always separate
     # Assuming standard CLI parsing for now
     workflow_args, train_args, eval_args = parser.parse_args_into_dataclasses()
-        
+
     # Validate essential inputs based on mode
     if workflow_args.mode != "eval_only" and not train_args.train_params:
         raise ValueError(f"Mode '{workflow_args.mode}' requires a training parameter file specified via --train_params")
     if workflow_args.mode != "train_only" and not eval_args.eval_params:
         raise ValueError(f"Mode '{workflow_args.mode}' requires an evaluation parameter file specified via --eval_params")
-            
+
 
     # Create and run the workflow
     try:
