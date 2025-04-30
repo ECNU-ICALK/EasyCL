@@ -175,7 +175,7 @@ def broadcast_object(obj: Any, src: int = 0) -> Any:
     world_size = get_world_size()
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    print(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 开始广播对象，源进程: {src}")
+    debugprint(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 开始广播对象，源进程: {src}")
     debugprint(f"[rank {rank}/{world_size-1}] broadcast_object 开始，源进程: {src}")
 
     # 序列化对象
@@ -184,60 +184,61 @@ def broadcast_object(obj: Any, src: int = 0) -> Any:
         torch.save(obj, buffer)
         data = buffer.getvalue()
         data_size = len(data)
-        print(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 对象序列化完成，大小: {data_size/1024/1024:.2f} MB")
+        debugprint(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 对象序列化完成，大小: {data_size/1024/1024:.2f} MB")
         debugprint(f"[rank {rank}/{world_size-1}] 对象序列化完成，大小: {data_size/1024/1024:.2f} MB")
     else:
         data = None
         data_size = 0
-        print(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 准备接收对象")
+        debugprint(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 准备接收对象")
 
     # 广播长度
     size = torch.tensor([0], dtype=torch.long, device=device)
     if rank == src:
         size[0] = torch.tensor([len(data)], dtype=torch.long, device=device)
-        print(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 准备广播数据大小: {size.item()} 字节")
+        debugprint(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 准备广播数据大小: {size.item()} 字节")
 
     # 添加每个进程的状态打印
     for i in range(world_size):
         if rank == i:
-            print(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 准备广播/接收数据大小")
+            debugprint(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 准备广播/接收数据大小")
+        
 
     torch.distributed.broadcast(size, src)
 
-    print(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 已接收数据大小: {size.item()} 字节")
+    debugprint(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 已接收数据大小: {size.item()} 字节")
     debugprint(f"[rank {rank}/{world_size-1}] 已接收数据大小: {size.item()} 字节")
 
     # 广播数据
     if rank == src:
         tensor = torch.ByteTensor(list(data)).to(device)
-        print(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 准备广播数据内容...")
+        debugprint(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 准备广播数据内容...")
     else:
         tensor = torch.empty(size.item(), dtype=torch.uint8, device=device)
-        print(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 准备接收 {size.item()} 字节数据...")
+        debugprint(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 准备接收 {size.item()} 字节数据...")
 
     # 添加每个进程的状态打印
     for i in range(world_size):
         if rank == i:
-            print(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 准备广播/接收数据内容")
+            debugprint(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 准备广播/接收数据内容")
 
     torch.distributed.broadcast(tensor, src)
 
-    print(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 数据广播/接收完成")
+    debugprint(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 数据广播/接收完成")
     debugprint(f"[rank {rank}/{world_size-1}] 数据广播/接收完成")
 
     # 反序列化
     if rank != src:
         try:
-            print(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 开始反序列化数据...")
+            debugprint(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 开始反序列化数据...")
             buffer = io.BytesIO(tensor.cpu().numpy().tobytes())
             obj = torch.load(buffer)
-            print(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 数据反序列化成功")
+            debugprint(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 数据反序列化成功")
             debugprint(f"[rank {rank}/{world_size-1}] 数据反序列化成功")
         except Exception as e:
-            print(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 数据反序列化失败: {str(e)}")
+            debugprint(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 数据反序列化失败: {str(e)}")
             debugprint(f"[rank {rank}/{world_size-1}] 数据反序列化失败: {str(e)}")
             raise
 
-    print(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 广播对象完成")
+    debugprint(f"[DEBUG] broadcast_object: [rank {rank}/{world_size-1}] 广播对象完成")
     debugprint(f"[rank {rank}/{world_size-1}] broadcast_object 完成")
     return obj
