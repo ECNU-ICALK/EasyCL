@@ -46,7 +46,7 @@ This directory contains implementations of various continual learning methods fo
     - Combines shared and task-specific adapters with dynamic dataset classification.
     - Uses a classifier to route inputs to appropriate adapters.
 
-11. **CLIT-MoE (Continual Learning with Task-specific Mixture of Experts)**
+11. **CL-MoE (Continual Learning with Task-specific Mixture of Experts)**
     - Uses dual momentum Mixture-of-Experts for continual visual question answering.
     - Implements task-level and instance-level routing.
 
@@ -95,7 +95,7 @@ Below are the links to the original implementations of each method. If a method 
    - Original Implementation: [Link to be filled]
    - Note: Original implementation by the authors
 
-7. **CLIT-MoE**
+7. **CL-MoE**
    - Original Implementation: [Link to be filled]
    - Note: Original implementation by the authors
 
