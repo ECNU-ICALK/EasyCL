@@ -54,5 +54,4 @@ base_model_path: meta-llama/Meta-Llama-3-8B-Instruct # Required for SSR: Path to
 num_shots: 2
 n_clusters: 20
 pseudo_sample_memory: 200 # Number of pseudo samples to keep per task
-pseudo_samples_dir: pseudo_samples_ssr # Directory for storing SSR pseudo samples
-previous_task_model: path/to/previous/task/model # Model from previous task, used for generating pseudo samples
+pseudo_samples_dir: saves/pseudo_samples # Directory for storing SSR pseudo samples

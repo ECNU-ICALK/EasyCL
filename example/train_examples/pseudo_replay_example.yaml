@@ -53,5 +53,5 @@ resume_from_checkpoint: null
 use_pseudo_replay: true
 base_model_path: meta-llama/Meta-Llama-3-8B-Instruct # Required: Path to the base model for generation (can be the initial base or the model from task 0)
 num_samples_per_task: 200
-pseudo_samples_dir: pseudo_samples_pr # Directory for storing pseudo samples
+pseudo_samples_dir: saves/pseudo_samples # Directory for storing pseudo samples
 num_shots: 5 # Number of examples for few-shot generation prompt

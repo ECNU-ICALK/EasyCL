@@ -50,5 +50,5 @@ resume_from_checkpoint: null
 
 # Dynamic ConPET Specific Arguments
 use_dynamic_conpet: true
-adapters_save_path: saves/llama3-8b/lora/dynamic_conpet_sft/adapters # Path to save adapters (shared and task-specific), {task_id} will be replaced
+adapters_save_path: saves/dynamic_conpet_adapters # Path to save adapters (shared and task-specific), {task_id} will be replaced
 classification_loss_weight: 10.0

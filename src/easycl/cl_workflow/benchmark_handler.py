@@ -107,20 +107,6 @@ class BenchmarkHandler:
             logger.error(f"Failed to retrieve task sequence for benchmark '{self.benchmark_name}', order '{self.benchmark_order}'. Check benchmark_info.json structure.")
             raise ValueError("Could not retrieve task sequence.")
 
-    def _find_dataset_options_file(self) -> Optional[str]:
-        """Finds the dataset options file (JSON or YAML) in the benchmark root directory."""
-        options_filenames = ["dataset_options.json", "dataset_options.yaml", "dataset_options.yml"]
-        for filename in options_filenames:
-            potential_path = os.path.join(self.benchmark_dir, filename)
-            if os.path.exists(potential_path):
-                if filename.endswith(('.yaml', '.yml')) and not YAML_AVAILABLE:
-                    logger.error(f"Found YAML dataset options file '{potential_path}' but PyYAML is not installed. Please install it: pip install PyYAML")
-                    raise ImportError(f"PyYAML is required for {filename}")
-                logger.info(f"Found dataset options file: {potential_path}")
-                return potential_path
-        logger.warning(f"Dataset options file (dataset_options.json/yaml/yml) not found in benchmark directory: {self.benchmark_dir}")
-        return None
-
     def get_benchmark_configs(
         self,
         original_train_kwargs: Dict[str, Any],
@@ -156,18 +142,6 @@ class BenchmarkHandler:
         # Set task_dir to the benchmark root. CLEvalEvaluator will handle subdirs.
         modified_eval_kwargs['task_dir'] = self.benchmark_dir
         logger.info(f"Setting 'task_dir' for evaluation to benchmark root: {self.benchmark_dir}")
-
-        # Override dataset_options path
-        dataset_options_path = self._find_dataset_options_file()
-        if dataset_options_path:
-            modified_eval_kwargs['dataset_options'] = dataset_options_path
-            logger.info(f"Overriding 'dataset_options' path to: {dataset_options_path}")
-        else:
-            # Decide behavior: Warning or error if options file is crucial?
-            # For now, log a warning and remove the key if it exists, relying on evaluator's potential defaults might be risky.
-            if 'dataset_options' in modified_eval_kwargs:
-                del modified_eval_kwargs['dataset_options']
-            logger.warning(f"No dataset_options file found in {self.benchmark_dir}. Evaluation might fail if options are required.")
 
         # --- Add Benchmark Markers ---
         modified_eval_kwargs['is_benchmark_mode'] = True

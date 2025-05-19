@@ -51,4 +51,4 @@ resume_from_checkpoint: null
 use_olora: true
 orthogonal_lambda: 0.5
 l2_lambda: 0.0
-olora_history_path: olora_history # Path to save/load O-LoRA history adapters 
+olora_history_path: saves/olora_history # Path to save/load O-LoRA history adapters 

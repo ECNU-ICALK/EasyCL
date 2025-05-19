@@ -67,30 +67,10 @@ class CLEvaluator:
             **asdict(self.cl_finetuning_args)
         }
         self.tasks = self.cl_eval_args.cl_tasks.split(",") if self.cl_eval_args.cl_tasks else []
-        self.dataset_options = self._load_dataset_options()
+        #self.dataset_options = self._load_dataset_options()
         
         # 处理多adapter模式
         self.using_multi_adapter = self.cl_eval_args.eval_mode == "multi_adapter"
-
-    def _load_dataset_options(self) -> Dict:
-        """加载数据集选项配置"""
-        if self.cl_eval_args.dataset_options:
-            options_path = self.cl_eval_args.dataset_options
-        else:
-            options_path = os.path.join("./data", "dataset_options.json")
-
-        if os.path.exists(options_path):
-            with open(options_path, "r", encoding="utf-8") as f:
-                dataset_options = json.load(f)
-        else:
-            raise ValueError(f"数据集选项配置文件未找到：{options_path}")
-
-        # 验证所有任务都有对应的配置
-        for task in self.tasks:
-            if task not in dataset_options:
-                raise ValueError(f"任务 {task} 在 dataset_options 中没有找到对应的配置")
-
-        return dataset_options
 
     def _run_abscl_selector(self, task: str, dataset_path: str) -> bool:
         """运行ABSCL选择器为任务数据集选择最合适的Adapters"""
@@ -248,10 +228,7 @@ class CLEvaluator:
 
             # 更新任务特定参数
             eval_args["task"] = task
-            if task not in self.dataset_options:
-                 logger.error(f"Task '{task}' not found in loaded dataset options. Skipping evaluation for this task.")
-                 continue
-            task_config = self.dataset_options[task]
+            # task_config = self.dataset_options[task] # Removed: Dependency on self.dataset_options
 
             # 为每个任务创建独立的保存目录
             task_save_dir = os.path.join(eval_args["save_dir"], task)
@@ -276,19 +253,8 @@ class CLEvaluator:
                 eval_args["adapter_name_or_path"] = ",".join(eval_args["adapter_name_or_path"])
                 logger.info(f"Converted adapter_name_or_path from list to comma-separated string: {eval_args['adapter_name_or_path']}")
 
-            # 将数据集选项配置保存为临时文件
-            task_options = {
-                task: {
-                    "options": task_config["options"],
-                    "description": task_config["description"]
-                }
-            }
-            task_options_path = os.path.join(task_save_dir, f"{task}_options.json")
-            with open(task_options_path, "w", encoding="utf-8") as f:
-                json.dump(task_options, f, indent=2, ensure_ascii=False)
-
-            # 设置评估参数：使用临时文件路径
-            eval_args["dataset_options"] = task_options_path
+            # Removed block for creating and using temporary task_options.json
+            # eval_args["dataset_options"] = task_options_path
             
             # 多adapter模式下，运行选择器
             if self.using_multi_adapter:
@@ -357,7 +323,7 @@ class CLEvaluator:
                 results[task] = json.load(f)
 
             # 清理临时文件
-            os.remove(task_options_path)
+            # os.remove(task_options_path) # Removed as task_options_path is no longer created
 
             # 显式删除 evaluator 并释放内存
             logger.info(f"Task {task} evaluation complete, releasing resources")

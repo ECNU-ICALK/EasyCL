@@ -17,10 +17,7 @@ from llamafactory.data import get_template_and_fix_tokenizer
 from llamafactory.extras.misc import get_device_count
 from llamafactory.extras.packages import is_vllm_available
 from llamafactory.extras.constants import IGNORE_INDEX
-from .adapters import (
-    AlpacaEvalAdapter, 
-    CustomDatasetAdapter
-)
+from .adapters import CustomDatasetAdapter
 from easycl.hparams.parser import get_cl_eval_args
 from easycl.cl.moe.moelora_loader import load_moelora_model
 from easycl.cl.clmoe.clmoe_loader import load_clmoe_model
@@ -156,9 +153,6 @@ class CLEvalEvaluator(BaseEvaluator):
         
         # 根据数据集类型选择适配器
         self.adapter = self._get_adapter()
-        
-        # 加载数据集选项配置
-        self.dataset_options = self._load_dataset_options()
         
         # 初始化当前加载的adapter路径
         self.current_adapter_path = None
@@ -496,20 +490,6 @@ class CLEvalEvaluator(BaseEvaluator):
             else:
                  raise FileNotFoundError(error_msg) # English log
 
-    def _load_dataset_options(self) -> Dict:
-        """加载数据集选项配置"""
-        # 首先尝试使用命令行参数指定的路径
-        if hasattr(self.eval_args, "dataset_options") and self.eval_args.dataset_options:
-            options_path = self.eval_args.dataset_options
-        else:
-            # 如果未指定，则使用默认路径
-            options_path = os.path.join("./data", "dataset_options.json")
-        
-        if os.path.exists(options_path):
-            with open(options_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        return {}
-
     @torch.inference_mode()
     def batch_inference(self, batch: List[Dict]) -> List[Dict]:
         """批量推理，支持多adapter模式"""
@@ -643,15 +623,17 @@ class CLEvalEvaluator(BaseEvaluator):
         """使用vLLM进行批量推理"""
         # 准备输入数据
         inputs = []
+        dataset_specific_info = self.dataset_info.get(self.eval_args.task) if self.dataset_info else None # Get dataset specific info
+
         for example in batch:
             # 格式化示例
             formatted = self.adapter.format_example(
                 example,
                 template=getattr(self, 'eval_template', ""),
                 subject_name=getattr(self, 'subject_name', ""),
-                dataset_options=self.dataset_options,
                 dataset_name=self.eval_args.task,
-                support_set=getattr(self, 'dev_examples', [])
+                support_set=getattr(self, 'dev_examples', []),
+                dataset_specific_info=dataset_specific_info # Pass dataset specific info
             )
             
             if not formatted:
@@ -707,8 +689,8 @@ class CLEvalEvaluator(BaseEvaluator):
                     result = self.adapter.process_result(
                         pred,
                         example,
-                        self.dataset_options,
-                        self.eval_args.task
+                        self.eval_args.task,
+                        dataset_specific_info=dataset_specific_info # Pass dataset specific info
                     )
                     outputs.append(result)
                 else:
@@ -723,14 +705,16 @@ class CLEvalEvaluator(BaseEvaluator):
         """使用当前加载的adapter处理一批样本"""
         # 格式化输入
         formatted_examples = []
+        dataset_specific_info = self.dataset_info.get(self.eval_args.task) if self.dataset_info else None # Get dataset specific info
+
         for example in batch:
             formatted = self.adapter.format_example(
                 example,
                 template=self.eval_template if hasattr(self, 'eval_template') else "",
                 subject_name=self.subject_name if hasattr(self, 'subject_name') else "",
-                dataset_options=self.dataset_options,
                 dataset_name=self.eval_args.task,
-                support_set=self.dev_examples if hasattr(self, 'dev_examples') else []
+                support_set=self.dev_examples if hasattr(self, 'dev_examples') else [],
+                dataset_specific_info=dataset_specific_info # Pass dataset specific info
             )
             if formatted:  # 确保格式化结果不为空
                 formatted_examples.append(formatted)
@@ -822,8 +806,8 @@ class CLEvalEvaluator(BaseEvaluator):
                 result = self.adapter.process_result(
                     pred,
                     example,
-                    self.dataset_options,
-                    self.eval_args.task
+                    self.eval_args.task,
+                    dataset_specific_info=dataset_specific_info # Pass dataset specific info
                 )
                 outputs.append(result)
 

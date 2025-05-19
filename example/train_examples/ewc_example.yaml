@@ -51,5 +51,4 @@ resume_from_checkpoint: null
 # EWC Specific Arguments
 use_ewc: true
 ewc_lambda: 10000
-ewc_num_samples: 100
-previous_task_data: path/to/previous/task/data # Required for EWC: path to data for Fisher computation 
+ewc_num_samples: 100 

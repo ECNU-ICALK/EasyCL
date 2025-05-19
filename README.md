@@ -17,7 +17,6 @@ EasyCL is developed based on [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Fa
 <details>
 <summary>🚧 <strong>Known Issues / Upcoming Features</strong></summary>
 
-*   [TODO] Address unidentified LLaMAFactory bug triggered by GEM in multimodal scenarios.
 *   [TODO] ILoRA triggers bugs during multi-GPU training with ZeRO-2 configuration.
 *   [Feature] Planning to add support for [New Method/Feature].
 *   Optimizing memory usage during [Specific Process].
@@ -47,16 +46,19 @@ EasyCL is developed based on [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Fa
   - [Alpaca Format](#alpaca-format)
   - [Sharegpt Format](#sharegpt-format)
   - [Dataset Requirements for Evaluation](#dataset-requirements-for-evaluation)
-  - [Continuous Learning Evaluation](#continuous-learning-evaluation)
-- [Benchmark Adaptation](#benchmark-adaptation)
-  - [Creating a Custom Benchmark](#creating-a-custom-benchmark)
+- [Continual Learning Training](#continual-learning-training)
+  - [Distributed Training Compatibility](#distributed-training-compatibility)
+  - [Setting Up Multi-GPU Training](#setting-up-multi-gpu-training)
+- [Continual Learning Evaluation](#continual-learning-evaluation)
+  - [Evaluation Methodology](#evaluation-methodology)
+  - [Calculated Continual Learning Metrics](#calculated-continual-learning-metrics)
 - [Workflow](#workflow)
   - [Train Only](#train-only)
   - [Evaluate Only](#evaluate-only)
   - [Train Then Evaluate](#train-then-evaluate)
   - [Full Workflow (Train, Evaluate, Calculate Metrics)](#full-workflow-train-evaluate-calculate-metrics)
-- [Distributed Training Compatibility](#distributed-training-compatibility)
-  - [Setting Up Multi-GPU Training](#setting-up-multi-gpu-training)
+- [Benchmark Adaptation](#benchmark-adaptation)
+  - [Creating a Custom Benchmark](#creating-a-custom-benchmark)
 - [License](#license)
 
 ## Introduction
@@ -207,14 +209,14 @@ For data in the above format, the *dataset description* in `dataset_info.json` s
 
 #### Dataset Requirements for Evaluation
 
-EasyCL's evaluation process relies on the `dataset_info.json` file to locate and load required datasets. When running evaluation commands with `--cl_tasks <task_name>` (e.g., `--cl_tasks my_eval_task`), the evaluator will:
+EasyCL's evaluation process relies on the \`dataset_info.json\` file to locate and load required datasets. When running evaluation commands with \`--cl_tasks <task_name>\` (e.g., \`--cl_tasks my_eval_task\`), the evaluator will:
 
-1. **Find Test Set**: The evaluator looks for entries matching `<task_name>_test` (e.g., `my_eval_task_test`) or entries with key `<task_name>` and `split` field set to `"test"` in `dataset_info.json`. **Test set is required for evaluation.**
-2. **Find Dev Set**: If `n_shot > 0` is set in evaluation parameters (for few-shot evaluation), the evaluator similarly looks for entries matching `<task_name>_dev` (e.g., `my_eval_task_dev`) or entries with `split` field set to `"dev"`. **Dev set is not required for zero-shot evaluation.**
+1. **Find Test Set**: The evaluator looks for entries matching \`<task_name>_test\` (e.g., \`my_eval_task_test\`) or entries with key \`<task_name>\` and \`split\` field set to \`"test"\` in \`dataset_info.json\`. **Test set is required for evaluation.**
+2. **Find Dev Set**: If \`n_shot > 0\` is set in evaluation parameters (for few-shot evaluation), the evaluator similarly looks for entries matching \`<task_name>_dev\` (e.g., \`my_eval_task_dev\`) or entries with \`split\` field set to \`"dev"\`. **Dev set is not required for zero-shot evaluation.**
 
 **Example:**
 
-Suppose your `dataset_info.json` contains:
+Suppose your \`dataset_info.json\` contains:
 
 ```json
 {
@@ -240,116 +242,29 @@ Suppose your `dataset_info.json` contains:
 }
 ```
 
-When you run `easycl-cli cl_workflow --mode eval_only --eval_params <your_eval_config>.yaml` with `--cl_tasks my_eval_task` specified in the config:
-* The evaluator will load `my_data/my_eval_task_test.json` as test set.
-* If `--n_shot 5` is also specified in the config, the evaluator will load `my_data/my_eval_task_dev.json` and use the first 5 samples as few-shot examples.
+When you run \`easycl-cli cl_workflow --mode eval_only --eval_params <your_eval_config>.yaml\` with \`--cl_tasks my_eval_task\` specified in the config:
+* The evaluator will load \`my_data/my_eval_task_test.json\` as test set.
+* If \`--n_shot 5\` is also specified in the config, the evaluator will load \`my_data/my_eval_task_dev.json\` and use the first 5 samples as few-shot examples.
 
 **Important Notes:**
-* Ensure that you define corresponding `test` set entries in `dataset_info.json` for each task that needs evaluation, with correct `file_name`.
-* Define `dev` set entries if you need few-shot evaluation.
-* The `file_name` paths should be relative to the directory containing `dataset_info.json` or the `data` directory in project root. The evaluator will look in `task_dir` (if specified) or `./data` directory first.
+* Ensure that you define corresponding \`test\` set entries in \`dataset_info.json\` for each task that needs evaluation, with correct \`file_name\`.
+* Define \`dev\` set entries if you need few-shot evaluation.
+* The \`file_name\` paths should be relative to the directory containing \`dataset_info.json\` or the \`data\` directory in project root. The evaluator will look in \`task_dir\` (if specified) or \`./data\` directory first.
 
+## Continual Learning Training
 
+EasyCL streamlines the continual learning training process, offering a "one-click" experience that simplifies complex setups. Our framework automates the sequential training across tasks for both single-modal and multi-modal scenarios.
 
-### Continuous Learning Evaluation
+A key advantage of EasyCL is its intelligent management of continual learning parameters. Based on the selected CL method, the framework automatically generates and adapts essential parameters required for effective learning. This includes:
 
-If you need to use continuous learning evaluation, you need to register dataset options in `dataset_options.json`. Here is an example:
+*   Referencing the model trained on the previous task.
+*   Managing information about datasets from prior tasks.
+*   Constructing lists of datasets for experience replay strategies.
+*   Handling shared storage paths required by specific algorithms, such as those for historical adapter information or generated pseudo-samples.
 
-```json
-"custom_dataset": {
-  "options": ["Option1", "Option2", "Option3"],
-  "description": "Custom dataset example with 3 options"
-}
-```
+This automation significantly reduces manual configuration, allowing you to focus on your research and experiments with a truly "simple and easy-to-use" toolkit.
 
-This configuration allows EasyCL to properly evaluate model performance on classification tasks during continuous learning.
-
-
-
-## Benchmark Adaptation
-
-Our framework can automatically handle the training and evaluation of benchmarks, supporting switching between multiple task orders. This makes it easier to reproduce and compare the effects of different continual learning methods on standard datasets.
-
-We currently support the following three commonly used benchmarks:
-
-1. **LFPT5** - [Lfpt5: A unified framework for lifelong few-shot language learning based on prompt tuning of t5](https://arxiv.org/pdf/2110.07298)
-2. **Large Number of Tasks Benchmark** - [Orthogonal subspace learning for language model continual learning](https://arxiv.org/pdf/2310.14152)
-3. **ABSACL_ATSC (Aspect-based Sentiment Analysis Continual Learning)** - [Adapting bert for continual learning of a sequence of aspect sentiment classification tasks](https://arxiv.org/pdf/2112.03271)
-
-You can use the following command to run benchmark evaluations (Benchmark evaluation currently only supports running in `full_workflow` mode):
-
-```bash
-easycl-cli cl_workflow --mode full_workflow \\
-    --train_params ./example/train_examples/lora_example.yaml \\
-    --eval_params ./example/eval_examples/lora_eval.yaml \\
-    --benchmark ABSACL_ATSC --benchmark_order order1 --benchmark_dir ./benchmark/ABSACL_ATSC
-```
-
-**Note:**
-* Before running a benchmark, ensure that the corresponding benchmark data is stored in the directory specified by `--benchmark_dir` as required.
-* Each benchmark needs to maintain a `benchmark_info.json` file to register the benchmark name, define different task orders, and specify the dataset information required for each task.
-* Datasets involved in the benchmark need to be registered in the `dataset_info.json` in the benchmark directory and `dataset_options.json` (if classification tasks need evaluation) in the project root directory.
-
-### Creating a Custom Benchmark
-
-If you wish to use your own benchmark, please follow these steps:
-
-1. **Prepare Datasets:**
-   * Ensure your datasets conform to the **Alpaca** or **ShareGPT** format described in [Dataset Format Requirements](#dataset-format-requirements).
-   * Organize the data for each task separately.
-2. **Organize Benchmark Directory:**
-   * Create a new folder under the `benchmark` directory, named after your benchmark (e.g., `my_custom_benchmark`).
-   * Place the corresponding data files within this folder according to your task division.
-3. **Register Dataset Information:**
-   * In the `dataset_info.json` file at the project root, add descriptions for each dataset used in your benchmark. Refer to the examples in the [Data Format](#data-format) section.
-   * Register dataset options in the `dataset_options.json` file at the project root. Refer to the examples in the [Continuous Learning Evaluation](#continuous-learning-evaluation) section.
-4. **Create `benchmark_info.json`:**
-   * In your created benchmark directory (e.g., `benchmark/my_custom_benchmark`), create a `benchmark_info.json` file.
-   * In this file, define your benchmark name, different task orders, and specify the dataset names corresponding to each task within each order (these names should match those registered in `dataset_info.json`). You can refer to the structure of existing benchmarks (e.g., `benchmark/ABSACL_ATSC/benchmark_info.json`).
-5. **Run Benchmark:**
-   * You can now run your custom benchmark using the `easycl-cli` command with the `--benchmark <YourBenchmarkName>` and `--benchmark_dir ./benchmark/<YourBenchmarkDirectory>` arguments.
-
-## Workflow
-
-To facilitate one-click training via the command line, we have implemented a Command-Line Interface (CLI) for training. You can use various modes for training and evaluation, and it will automatically set some required parameter mappings according to the settings in `src/easycl/cl_workflow/cl_params_config.json`. We currently support four training workflows: Train Only, Evaluate Only, Train Then Evaluate, and Full Workflow (Train, Evaluate, Calculate Metrics). You can use the `--previewonly` flag to preview commands without running them, and use `clean_dirs` to automatically clean output paths before running commands.
-
-### Train Only
-
-```bash
-easycl-cli cl_workflow --mode train_only --train_params ./example/train_examples/lora_example.yaml
-```
-
-**Preview Result**: Executes training commands sequentially for tasks defined in `train_config.json`, applying parameter management between tasks.
-
-### Evaluate Only
-
-```bash
-easycl-cli cl_workflow --mode eval_only --eval_params ./example/eval_examples/lora_eval.yaml
-```
-
-**Preview Result**: Executes evaluation command(s) specified in `eval_config.json` (e.g., evaluating a specific fine-tuned model on `cl_tasks`).
-
-### Train Then Evaluate
-
-```bash
-easycl-cli cl_workflow --mode train_then_eval \
-    --train_params ./example/train_examples/lora_example.yaml \
-    --eval_params ./example/eval_examples/lora_eval.yaml
-```
-
-**Preview Result**: Executes training commands sequentially, then executes evaluation commands (evaluating base model and model after each task).
-
-### Full Workflow (Train, Evaluate, Calculate Metrics)
-
-```bash
-easycl-cli cl_workflow --mode full_workflow \
-    --train_params ./example/train_examples/lora_example.yaml \
-    --eval_params ./example/eval_examples/lora_eval.yaml
-```
-
-**Preview Result**: Executes training sequentially, then evaluates base/task models, and finally calculates and saves CL metrics (Last, Avg, BWT, FWT) to the evaluation output directory.
-
-For detailed information about workflow configuration and CL metrics, see [src/easycl/cl_workflow/README.md](src/easycl/cl_workflow/README.md).
+EasyCL also supports distributed training. The details are as follows:
 
 ## Distributed Training Compatibility
 
@@ -420,6 +335,126 @@ To enable distributed training with DeepSpeed, follow these steps:
    ```yaml
    deepspeed: ./example/deepspeed_config/ds_z0_config.json
    ```
+
+## Continual Learning Evaluation
+
+This section details how EasyCL handles the evaluation of models in continual learning scenarios and the metrics used to assess their performance.
+
+### Evaluation Methodology
+
+EasyCL supports continual learning evaluation for both single-modal and multimodal tasks. The core of our evaluation process relies on determining the **accuracy** of the model's predictions. This is achieved by comparing the model's generated output against the reference (ground truth) outputs provided in the test dataset for each task.
+
+**Note:** Our current framework exclusively supports evaluation based on "accuracy." Other evaluation metrics, such as those based on similarity scores (e.g., cosine similarity for embeddings) or Intersection over Union (IoU) for object detection/segmentation tasks, are not yet implemented.
+
+### Calculated Continual Learning Metrics
+
+The framework automatically calculates several standard continual learning metrics after the evaluation phase of a `full_workflow` or an `eval_only` (when evaluating multiple task checkpoints) run. These metrics help quantify a model's ability to learn new tasks while retaining knowledge of previously learned tasks, its tendency to forget, and its capacity to transfer knowledge.
+
+The primary metrics computed are:
+
+1.  **Last (Overall Performance)**:
+    *   Measures the model's average accuracy across all \\(N\\) tasks after it has been sequentially trained on all of them.
+    *   **Formula**: \\[ \\text{Last} = \\frac{1}{N} \\sum_{i=1}^{N} R_{N,i} \\]
+    *   Where \\(R_{N,i}\\) is the accuracy of the model on task \\(i\\) after being trained on all \\(N\\) tasks.
+
+2.  **Avg (Average Accuracy)**:
+    *   Represents the average of the mean accuracies obtained at each step of the continual learning process. Specifically, after learning each task \\(k\\), the model's average accuracy on all tasks learned so far (from 1 to \\(k\\)) is computed. The Avg metric is the average of these per-step average accuracies.
+    *   **Formula**: \\[ \\text{Avg} = \\frac{1}{N} \\sum_{k=1}^{N} \\left( \\frac{1}{k} \\sum_{i=1}^{k} R_{k,i} \\right) \\]
+    *   Where \\(R_{k,i}\\) is the accuracy of the model on task \\(i\\) after being trained sequentially on tasks 1 through \\(k\\).
+
+3.  **BWT (Backward Transfer / Forgetfulness)**:
+    *   Measures how much the learning of new tasks negatively impacts the performance on previously learned tasks (i.e., forgetting). A higher positive value indicates better retention (less forgetting), while a negative value indicates significant forgetting.
+    *   **Formula**: \\[ \\text{BWT} = \\frac{1}{N-1} \\sum_{i=1}^{N-1} (R_{N,i} - R_{i,i}) \\]
+    *   Where \\(R_{N,i}\\) is the accuracy on task \\(i\\) after training on all \\(N\\) tasks, and \\(R_{i,i}\\) is the accuracy on task \\(i\\) immediately after it was learned (i.e., after training on tasks 1 through \\(i\\)). This metric is defined for \\(N > 1\\).
+
+4.  **FWT (Forward Transfer)**:
+    *   Measures how much knowledge gained from learning previous tasks helps in learning new, subsequent tasks. A positive value indicates beneficial forward transfer.
+    *   **Formula**: \\[ \\text{FWT} = \\frac{1}{N-1} \\sum_{i=2}^{N} (R_{i-1,i} - R_{0,i}) \\]
+    *   Where \\(R_{i-1,i}\\) is the accuracy on task \\(i\\) after training on tasks 1 through \\(i-1\\) (i.e., performance on task \\(i\\) *before* it is explicitly trained, but after learning previous tasks), and \\(R_{0,i}\\) is the accuracy on task \\(i\\) by the base model (before any continual learning). This metric is defined for \\(N > 1\\).
+
+## Workflow
+
+To facilitate one-click training via the command line, we have implemented a Command-Line Interface (CLI) for training. You can use various modes for training and evaluation, and it will automatically set some required parameter mappings according to the settings in `src/easycl/cl_workflow/cl_params_config.json`. We currently support four training workflows: Train Only, Evaluate Only, Train Then Evaluate, and Full Workflow (Train, Evaluate, Calculate Metrics). You can use the \`--previewonly\` flag to preview commands without running them, and use \`clean_dirs\` to automatically clean output paths before running commands.
+
+### Train Only
+
+```bash
+easycl-cli cl_workflow --mode train_only --train_params ./example/train_examples/lora_example.yaml
+```
+
+**Preview Result**: Executes training commands sequentially for tasks defined in `train_config.yaml`, applying parameter management between tasks.
+
+### Evaluate Only
+
+```bash
+easycl-cli cl_workflow --mode eval_only --eval_params ./example/eval_examples/lora_eval.yaml
+```
+
+**Preview Result**: Executes evaluation command(s) specified in `eval_config.yaml` (e.g., evaluating a specific fine-tuned model on `cl_tasks`).
+
+### Train Then Evaluate
+
+```bash
+easycl-cli cl_workflow --mode train_then_eval \
+    --train_params ./example/train_examples/lora_example.yaml \
+    --eval_params ./example/eval_examples/lora_eval.yaml
+```
+
+**Preview Result**: Executes training commands sequentially, then executes evaluation commands (evaluating base model and model after each task).
+
+### Full Workflow (Train, Evaluate, Calculate Metrics)
+
+```bash
+easycl-cli cl_workflow --mode full_workflow \
+    --train_params ./example/train_examples/lora_example.yaml \
+    --eval_params ./example/eval_examples/lora_eval.yaml
+```
+
+**Preview Result**: Executes training sequentially, then evaluates base/task models, and finally calculates and saves CL metrics (Last, Avg, BWT, FWT) to the evaluation output directory.
+
+For detailed information about workflow configuration and CL metrics, see [src/easycl/cl_workflow/README.md](src/easycl/cl_workflow/README.md).
+
+## Benchmark Adaptation
+
+Our framework can automatically handle the training and evaluation of benchmarks, supporting switching between multiple task orders. This makes it easier to reproduce and compare the effects of different continual learning methods on standard datasets.
+
+We currently support the following three commonly used benchmarks:
+
+1. **LFPT5** - [Lfpt5: A unified framework for lifelong few-shot language learning based on prompt tuning of t5](https://arxiv.org/pdf/2110.07298)
+2. **Large Number of Tasks Benchmark** - [Orthogonal subspace learning for language model continual learning](https://arxiv.org/pdf/2310.14152)
+3. **ABSACL_ATSC (Aspect-based Sentiment Analysis Continual Learning)** - [Adapting bert for continual learning of a sequence of aspect sentiment classification tasks](https://arxiv.org/pdf/2112.03271)
+
+You can use the following command to run benchmark evaluations (Benchmark evaluation currently only supports running in `full_workflow` mode):
+
+```bash
+easycl-cli cl_workflow --mode full_workflow \
+    --train_params ./example/train_examples/lora_example.yaml \
+    --eval_params ./example/eval_examples/lora_eval.yaml \
+    --benchmark ABSACL_ATSC --benchmark_order order1 --benchmark_dir ./benchmark/ABSACL_ATSC
+```
+
+**Note:**
+* Before running a benchmark, ensure that the corresponding benchmark data is stored in the directory specified by \`--benchmark_dir\` as required.
+* Each benchmark needs to maintain a \`benchmark_info.json\` file to register the benchmark name, define different task orders, and specify the dataset information required for each task.
+* Datasets involved in the benchmark need to be registered in the \`dataset_info.json\` in the benchmark directory.
+
+### Creating a Custom Benchmark
+
+If you wish to use your own benchmark, please follow these steps:
+
+1. **Prepare Datasets:**
+   * Ensure your datasets conform to the **Alpaca** or **ShareGPT** format described in [Dataset Format Requirements](#dataset-format-requirements).
+   * Organize the data for each task separately.
+2. **Organize Benchmark Directory:**
+   * Create a new folder under the \`benchmark\` directory, named after your benchmark (e.g., \`my_custom_benchmark\`).
+   * Place the corresponding data files within this folder according to your task division.
+3. **Register Dataset Information:**
+   * In the \`dataset_info.json\` file at the project root, add descriptions for each dataset used in your benchmark. Refer to the examples in the [Data Format](#data-format) section.
+4. **Create \`benchmark_info.json\`:**
+   * In your created benchmark directory (e.g., \`benchmark/my_custom_benchmark\`), create a \`benchmark_info.json\` file.
+   * In this file, define your benchmark name, different task orders, and specify the dataset names corresponding to each task within each order (these names should match those registered in \`dataset_info.json\`). You can refer to the structure of existing benchmarks (e.g., \`benchmark/ABSACL_ATSC/benchmark_info.json\`).
+5. **Run Benchmark:**
+   * You can now run your custom benchmark using the \`easycl-cli\` command with the \`--benchmark <YourBenchmarkName>\` and \`--benchmark_dir ./benchmark/<YourBenchmarkDirectory>\` arguments.
 
 ## License
 

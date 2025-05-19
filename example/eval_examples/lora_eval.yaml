@@ -4,6 +4,8 @@ cl_tasks: amazon
 template: llama3
 save_dir: saves/cl_eval_results
 
-# 多适配器评估参数
+
 eval_mode: single
 cl_tuning_type: lora
+do_sample: false
+num_beams: 1

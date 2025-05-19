@@ -17,7 +17,6 @@ EasyCL 是基于 [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory) 开�
 <details>
 <summary>🚧 <strong>已知问题 / 即将推出的功能</strong></summary>
 
-*   [待办] gem在多模态情况下会触发不知名llamafactory的bug，尝试定位解决。
 *   [待办] ilora在多卡训练的zero2会触发bug。
 *   [功能] 计划添加对 [新方法/功能] 的支持。
 *   优化 [特定过程] 中的内存使用。
@@ -47,16 +46,19 @@ EasyCL 是基于 [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory) 开�
   - [Alpaca 格式](#alpaca-格式)
   - [Sharegpt 格式](#sharegpt-格式)
   - [评估时的数据集要求](#评估时的数据集要求)
-  - [持续学习评估](#持续学习评估)
-- [Benchmark 适配](#benchmark-适配)
-  - [创建自定义 Benchmark](#创建自定义-benchmark)
+- [持续学习训练](#持续学习训练)
+  - [分布式训练适配](#分布式训练适配)
+  - [设置多卡训练](#设置多卡训练)
+- [持续学习评估](#持续学习评估)
+  - [评估方法](#评估方法)
+  - [计算的持续学习指标](#计算的持续学习指标)
 - [工作流程](#工作流程)
   - [仅训练](#仅训练)
   - [仅评估](#仅评估)
   - [先训练后评估](#先训练后评估)
   - [完整工作流（训练、评估、计算指标）](#完整工作流训练评估计算指标)
-- [分布式训练适配](#分布式训练适配)
-  - [设置多卡训练](#设置多卡训练)
+- [Benchmark 适配](#benchmark-适配)
+  - [创建自定义 Benchmark](#创建自定义-benchmark)
 - [许可证](#许可证)
 
 ## 简介
@@ -249,103 +251,20 @@ EasyCL 的评估流程同样依赖 `dataset_info.json` 文件来定位和加载�
 *   如果需要进行少样本评估，请同时定义 `dev` 集条目。
 *   `file_name` 指定的文件路径应相对于 `dataset_info.json` 所在的目录或项目根目录下的 `data` 目录。评估器会优先在 `task_dir` (如果指定) 或 `./data` 目录中查找。
 
-### 持续学习评估
+## 持续学习训练
 
-如果需要使用持续学习评估，需要在`dataset_options.json`中注册数据集选项。以下是一个示例：
+EasyCL 致力于简化持续学习的训练流程，提供"一键式"的操作体验，让复杂的配置变得简单。我们的框架能够自动执行单模态和多模态场景下的任务序列训练。
 
-```json
-"自定义数据集": {
-  "options": ["选项1", "选项2", "选项3"],
-  "description": "包含3个选项的自定义数据集示例"
-}
-```
+EasyCL 的一个核心优势在于其对持续学习参数的智能管理。根据所选的持续学习方法，框架会自动生成和适配有效学习所需的关键参数。这包括：
 
-这种配置允许EasyCL在持续学习过程中正确评估模型在分类任务上的性能。
+*   引用先前任务训练好的模型。
+*   管理来自先前任务的数据集信息。
+*   为经验回放策略构建所需的数据集列表。
+*   处理特定算法所需的共享存储路径，例如用于历史适配器信息或生成的伪样本的路径。
 
-## Benchmark 适配
+这种自动化特性极大地减少了手动配置的负担，让您可以借助一个真正"简单易用"的工具包，更专注于您的研究和实验。
 
-我们的框架可以自动实现 Benchmark 的训练以及评估，并支持多种任务顺序（Order）切换。这使得在标准数据集上复现和比较不同持续学习方法的效果变得更加容易。
-
-我们目前已适配了以下三个常用的 Benchmark：
-
-1.  **LFPT5** - [Lfpt5: A unified framework for lifelong few-shot language learning based on prompt tuning of t5](https://arxiv.org/pdf/2110.07298)
-2.  **Large Number of Tasks Benchmark** - [Orthogonal subspace learning for language model continual learning](https://arxiv.org/pdf/2310.14152)
-3.  **ABSACL_ATSC (Aspect-based Sentiment Analysis Continual Learning)** - [Adapting bert for continual learning of a sequence of aspect sentiment classification tasks](https://arxiv.org/pdf/2112.03271)
-
-你可以使用如下命令来进行 Benchmark 评估（Benchmark 评估目前只支持在 `full_workflow` 模式下运行）：
-
-```bash
-easycl-cli cl_workflow --mode full_workflow \\
-    --train_params ./example/train_examples/lora_example.yaml \\
-    --eval_params ./example/eval_examples/lora_eval.yaml \\
-    --benchmark ABSACL_ATSC --benchmark_order order1 --benchmark_dir ./benchmark/ABSACL_ATSC
-```
-
-**注意:**
-*   运行 Benchmark 前，请确保对应的 Benchmark 数据已按要求存放于 `--benchmark_dir` 指定的目录下。
-*   每个 Benchmark 都需要维护一个 `benchmark_info.json` 文件，用于注册 Benchmark 名称、定义不同的任务顺序 (order)，以及指定每个任务所需的数据集信息。
-*   Benchmark 中涉及的数据集需要在benchmark目录的 `dataset_info.json` 和 `dataset_options.json`（如果需要评估分类任务）中进行注册。
-
-### 创建自定义 Benchmark
-
-如果你希望使用自己的 Benchmark，请遵循以下步骤：
-
-1.  **准备数据集:**
-    *   确保你的数据集符合 [数据格式要求](#数据格式要求) 中描述的 **Alpaca** 或 **ShareGPT** 格式。
-    *   将每个任务的数据分别整理好。
-2.  **组织 Benchmark 目录:**
-    *   在 `benchmark` 目录下创建一个新的文件夹，以你的 Benchmark 名称命名（例如 `my_custom_benchmark`）。
-    *   在该文件夹下，根据你的任务划分，存放相应的数据文件。
-3.  **注册数据集信息:**
-    *   在项目根目录的 `dataset_info.json` 文件中，为你的 Benchmark 中使用的每个数据集添加描述。参考 [数据格式](#数据格式) 部分的示例。
-    *   请在项目根目录的 `dataset_options.json` 文件中注册数据集选项。参考 [持续学习评估](#持续学习评估) 部分的示例。
-4.  **创建 `benchmark_info.json`:**
-    *   在你创建的 Benchmark 目录下（例如 `benchmark/my_custom_benchmark`），创建一个 `benchmark_info.json` 文件。
-    *   在此文件中，定义你的 Benchmark 名称、不同的任务顺序 (order)，并指定每个顺序下各个任务所对应的数据集名称（这些名称应与 `dataset_info.json` 中注册的名称一致）。可以参考现有 Benchmark（如 `benchmark/ABSACL_ATSC/benchmark_info.json`）的结构。
-5.  **运行 Benchmark:**
-    *   现在你可以使用 `easycl-cli` 命令，并通过 `--benchmark <你的Benchmark名称>` 和 `--benchmark_dir ./benchmark/<你的Benchmark目录>` 参数来运行你的自定义 Benchmark 了。
-
-## 工作流程
-
-为了方便实现命令行一键式训练，我们实现了命令行界面（Command-Line Interface）的训练，你可以使用多种模式进行训练和评估，他会按照src\easycl\cl_workflow\cl_params_config.json中的设置自动设置一些需要的参数映射。我们目前支持四种训练工作流程：仅训练，仅评估， 先训练后评估和完整工作流（训练、评估、计算指标） 。你可以使用--previewonly指令进行不运行命令的命令预览，并可以使用clean_dirs在运行命令前自动清理输出路径。
-
-### 仅训练
-
-```bash
-easycl-cli cl_workflow --mode train_only --train_params ./example/train_examples/lora_example.yaml
-```
-
-**预览结果**: 按顺序执行`train_config.json`中定义的任务训练命令，并在任务之间应用参数管理。
-
-### 仅评估
-
-```bash
-easycl-cli cl_workflow --mode eval_only --eval_params ./example/eval_examples/lora_eval.yaml
-```
-
-**预览结果**: 执行`eval_config.json`中指定的评估命令（例如，在`cl_tasks`上评估特定的微调模型）。
-
-### 先训练后评估
-
-```bash
-easycl-cli cl_workflow --mode train_then_eval \
-    --train_params ./example/train_examples/lora_example.yaml \
-    --eval_params ./example/eval_examples/lora_eval.yaml
-```
-
-**预览结果**: 按顺序执行训练命令，然后执行评估命令（评估基础模型和每个任务后的模型）。
-
-### 完整工作流（训练、评估、计算指标）
-
-```bash
-easycl-cli cl_workflow --mode full_workflow \
-    --train_params ./example/train_examples/lora_example.yaml \
-    --eval_params ./example/eval_examples/lora_eval.yaml
-```
-
-**预览结果**: 按顺序执行训练，然后评估基础/任务模型，最后计算并保存持续学习指标（Last、Avg、BWT、FWT）到评估输出目录。
-
-有关工作流配置和持续学习指标的详细信息，请参阅 [src/easycl/cl_workflow/README.md](src/easycl/cl_workflow/README.md)。
+EasyCL 也支持分布式训练。具体细节如下：
 
 ## 分布式训练适配
 
@@ -416,6 +335,126 @@ EasyCL 实现了基于 DeepSpeed 的分布式训练，并在不同的 ZeRO 阶�
    ```yaml
    deepspeed: ./example/deepspeed_config/ds_z0_config.json
    ```
+
+## 持续学习评估
+
+本节详细介绍 EasyCL 如何在持续学习场景中评估模型，以及用于评估其性能的指标。
+
+### 评估方法
+
+EasyCL 支持单模态和多模态任务的持续学习评估。我们评估过程的核心依赖于判断模型预测的**准确率**。这是通过将模型生成的输出与测试数据集中为每个任务提供的参考（真实标签）输出进行比较来实现的。
+
+**注意：** 我们目前的框架仅支持基于"准确率"的评估。其他评估指标，例如基于相似度得分（例如，嵌入的余弦相似度）或用于目标检测/分割任务的交并比（IoU）的指标，尚未实现。
+
+### 计算的持续学习指标
+
+在 `full_workflow` 或 `eval_only`（当评估多个任务检查点时）运行的评估阶段之后，框架会自动计算几个标准的持续学习指标。这些指标有助于量化模型学习新任务、同时保留先前学习任务知识的能力、其遗忘趋势以及知识迁移的能力。
+
+计算的主要指标如下：
+
+1.  **Last (最终性能)**:
+    *   衡量模型在按顺序完成所有 \\(N\\) 个任务的训练后，在所有任务上的平均准确率。
+    *   **公式**: \\[ \\text{Last} = \\frac{1}{N} \\sum_{i=1}^{N} R_{N,i} \\]
+    *   其中 \\(R_{N,i}\\) 是模型在完成所有 \\(N\\) 个任务的训练后，在任务 \\(i\\) 上的准确率。
+
+2.  **Avg (平均准确率)**:
+    *   表示在持续学习过程的每个步骤中获得的平均准确率的平均值。具体来说，在学习完每个任务 \\(k\\) 后，会计算模型在迄今为止学习过的所有任务（从 1 到 \\(k\\)）上的平均准确率。Avg 指标是这些每步平均准确率的平均值。
+    *   **公式**: \\[ \\text{Avg} = \\frac{1}{N} \\sum_{k=1}^{N} \\left( \\frac{1}{k} \\sum_{i=1}^{k} R_{k,i} \\right) \\]
+    *   其中 \\(R_{k,i}\\) 是模型在按顺序训练完任务 1 到 \\(k\\) 后，在任务 \\(i\\) 上的准确率。
+
+3.  **BWT (Backward Transfer / 后向迁移或遗忘程度)**:
+    *   衡量学习新任务对先前学习任务性能的负面影响程度（即遗忘）。较高的正值表示更好的知识保留（较少遗忘），而负值表示明显的遗忘。
+    *   **公式**: \\[ \\text{BWT} = \\frac{1}{N-1} \\sum_{i=1}^{N-1} (R_{N,i} - R_{i,i}) \\]
+    *   其中 \\(R_{N,i}\\) 是在训练完所有 \\(N\\) 个任务后在任务 \\(i\\) 上的准确率，而 \\(R_{i,i}\\) 是在任务 \\(i\\) 刚学习完毕后（即在训练完任务 1 到 \\(i\\) 后）在该任务上的准确率。此指标定义于 \\(N > 1\\)。
+
+4.  **FWT (Forward Transfer / 前向迁移)**:
+    *   衡量从学习先前任务中获得的知识对学习新的后续任务的帮助程度。正值表示有益的前向迁移。
+    *   **公式**: \\[ \\text{FWT} = \\frac{1}{N-1} \\sum_{i=2}^{N} (R_{i-1,i} - R_{0,i}) \\]
+    *   其中 \\(R_{i-1,i}\\) 是在训练完任务 1 到 \\(i-1\\) 后在任务 \\(i\\) 上的准确率（即，在明确训练任务 \\(i\\) *之前*，但在学习了先前任务之后，在任务 \\(i\\) 上的性能），而 \\(R_{0,i}\\) 是基础模型（在任何持续学习之前）在任务 \\(i\\) 上的准确率。此指标定义于 \\(N > 1\\)。
+
+## 工作流程
+
+为了方便实现命令行一键式训练，我们实现了命令行界面（Command-Line Interface）的训练，你可以使用多种模式进行训练和评估，他会按照src\easycl\cl_workflow\cl_params_config.json中的设置自动设置一些需要的参数映射。我们目前支持四种训练工作流程：仅训练，仅评估， 先训练后评估和完整工作流（训练、评估、计算指标） 。你可以使用--previewonly指令进行不运行命令的命令预览，并可以使用clean_dirs在运行命令前自动清理输出路径。
+
+### 仅训练
+
+```bash
+easycl-cli cl_workflow --mode train_only --train_params ./example/train_examples/lora_example.yaml
+```
+
+**预览结果**: 按顺序执行`train_config.yaml`中定义的任务训练命令，并在任务之间应用参数管理。
+
+### 仅评估
+
+```bash
+easycl-cli cl_workflow --mode eval_only --eval_params ./example/eval_examples/lora_eval.yaml
+```
+
+**预览结果**: 执行`eval_config.yaml`中指定的评估命令（例如，在`cl_tasks`上评估特定的微调模型）。
+
+### 先训练后评估
+
+```bash
+easycl-cli cl_workflow --mode train_then_eval \
+    --train_params ./example/train_examples/lora_example.yaml \
+    --eval_params ./example/eval_examples/lora_eval.yaml
+```
+
+**预览结果**: 按顺序执行训练命令，然后执行评估命令（评估基础模型和每个任务后的模型）。
+
+### 完整工作流（训练、评估、计算指标）
+
+```bash
+easycl-cli cl_workflow --mode full_workflow \
+    --train_params ./example/train_examples/lora_example.yaml \
+    --eval_params ./example/eval_examples/lora_eval.yaml
+```
+
+**预览结果**: 按顺序执行训练，然后评估基础/任务模型，最后计算并保存持续学习指标（Last、Avg、BWT、FWT）到评估输出目录。
+
+有关工作流配置和持续学习指标的详细信息，请参阅 [src/easycl/cl_workflow/README.md](src/easycl/cl_workflow/README.md)。
+
+## Benchmark 适配
+
+我们的框架可以自动实现 Benchmark 的训练以及评估，并支持多种任务顺序（Order）切换。这使得在标准数据集上复现和比较不同持续学习方法的效果变得更加容易。
+
+我们目前已适配了以下三个常用的 Benchmark：
+
+1.  **LFPT5** - [Lfpt5: A unified framework for lifelong few-shot language learning based on prompt tuning of t5](https://arxiv.org/pdf/2110.07298)
+2.  **Large Number of Tasks Benchmark** - [Orthogonal subspace learning for language model continual learning](https://arxiv.org/pdf/2310.14152)
+3.  **ABSACL_ATSC (Aspect-based Sentiment Analysis Continual Learning)** - [Adapting bert for continual learning of a sequence of aspect sentiment classification tasks](https://arxiv.org/pdf/2112.03271)
+
+你可以使用如下命令来进行 Benchmark 评估（Benchmark 评估目前只支持在 `full_workflow` 模式下运行）：
+
+```bash
+easycl-cli cl_workflow --mode full_workflow \\
+    --train_params ./example/train_examples/lora_example.yaml \\
+    --eval_params ./example/eval_examples/lora_eval.yaml \\
+    --benchmark ABSACL_ATSC --benchmark_order order1 --benchmark_dir ./benchmark/ABSACL_ATSC
+```
+
+**注意:**
+*   运行 Benchmark 前，请确保对应的 Benchmark 数据已按要求存放于 `--benchmark_dir` 指定的目录下。
+*   每个 Benchmark 都需要维护一个 `benchmark_info.json` 文件，用于注册 Benchmark 名称、定义不同的任务顺序 (order)，以及指定每个任务所需的数据集信息。
+*   Benchmark 中涉及的数据集需要在benchmark目录的 `dataset_info.json` 中进行注册。
+
+### 创建自定义 Benchmark
+
+如果你希望使用自己的 Benchmark，请遵循以下步骤：
+
+1.  **准备数据集:**
+    *   确保你的数据集符合 [数据格式要求](#数据格式要求) 中描述的 **Alpaca** 或 **ShareGPT** 格式。
+    *   将每个任务的数据分别整理好。
+2.  **组织 Benchmark 目录:**
+    *   在 `benchmark` 目录下创建一个新的文件夹，以你的 Benchmark 名称命名（例如 `my_custom_benchmark`）。
+    *   在该文件夹下，根据你的任务划分，存放相应的数据文件。
+3.  **注册数据集信息:**
+    *   在项目根目录的 `dataset_info.json` 文件中，为你的 Benchmark 中使用的每个数据集添加描述。参考 [数据格式](#数据格式) 部分的示例。
+4.  **创建 `benchmark_info.json`:**
+    *   在你创建的 Benchmark 目录下（例如 `benchmark/my_custom_benchmark`），创建一个 `benchmark_info.json` 文件。
+    *   在此文件中，定义你的 Benchmark 名称、不同的任务顺序 (order)，并指定每个顺序下各个任务所对应的数据集名称（这些名称应与 `dataset_info.json` 中注册的名称一致）。可以参考现有 Benchmark（如 `benchmark/ABSACL_ATSC/benchmark_info.json`）的结构。
+5.  **运行 Benchmark:**
+    *   现在你可以使用 `easycl-cli` 命令，并通过 `--benchmark <你的Benchmark名称>` 和 `--benchmark_dir ./benchmark/<你的Benchmark目录>` 参数来运行你的自定义 Benchmark 了。
 
 ## 许可证
 
