@@ -39,8 +39,8 @@ EasyCL is developed based on [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Fa
 ## Table of Contents
 
 - [Introduction](#introduction)
-- [Implemented Methods](#implemented-methods)
 - [Installation](#installation)
+- [Implemented Methods](#implemented-methods)
 - [Dataset Format Requirements](#dataset-format-requirements)
   - [Data Format](#data-format)
   - [Alpaca Format](#alpaca-format)
@@ -68,6 +68,16 @@ EasyCL is an extension of the LLaMA Factory framework, focusing on continual lea
 The framework integrates a variety of state-of-the-art continual learning techniques designed specifically for language models, allowing researchers and practitioners to easily implement, compare, and develop new methods.
 
 For detailed implementation of the continual learning workflow, see [src/easycl/cl_workflow/README.md](src/easycl/cl_workflow/README.md).
+
+## Installation
+
+**Important:** Before installing EasyCL, please ensure that you have correctly installed LLaMA-Factory.
+
+```bash
+git clone https://github.com/ECNU-ICALK/EasyCL.git
+cd EasyCL
+pip install -e . 
+```
 
 ## Implemented Methods
 
@@ -99,14 +109,7 @@ For detailed implementation of the continual learning workflow, see [src/easycl/
 
 For more details about the continual learning methods, see [src/easycl/cl/README.md](src/easycl/cl/README.md).
 
-## Installation
 
-```bash
-git clone https://github.com/ECNU-ICALK/EasyCL.git
-cd EasyCL
-pip install -e . --no-deps
-```
-Note that if you already have LLaMA-Factory or an older version of EasyCL installed in your environment, you may need to uninstall the existing one and perform the installation again.
 
 ## Dataset Format Requirements
 

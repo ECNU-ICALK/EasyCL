@@ -39,8 +39,8 @@ EasyCL 是基于 [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory) 开�
 ## 目录
 
 - [简介](#简介)
-- [已实现方法](#已实现方法)
 - [安装](#安装)
+- [已实现方法](#已实现方法)
 - [数据集格式要求](#数据集格式要求)
   - [数据格式](#数据格式)
   - [Alpaca 格式](#alpaca-格式)
@@ -68,6 +68,16 @@ EasyCL 是 LLaMA Factory 框架的扩展，专注于大型语言模型的持续�
 该框架集成了各种专为语言模型设计的最先进持续学习技术，使研究人员和实践者能够轻松实现、比较和开发新方法。
 
 有关持续学习工作流的详细实现，请参阅 [src/easycl/cl_workflow/README.md](src/easycl/cl_workflow/README.md)。
+
+## 安装
+
+**重要提示：** 在安装 EasyCL 之前，请确保您已正确安装 LLaMA-Factory。
+
+```bash
+git clone https://github.com/ECNU-ICALK/EasyCL.git
+cd EasyCL
+pip install -e . 
+```
 
 ## 已实现方法
 
@@ -99,14 +109,8 @@ EasyCL 是 LLaMA Factory 框架的扩展，专注于大型语言模型的持续�
 
 有关持续学习方法的更多详细信息，请参阅 [src/easycl/cl/README.md](src/easycl/cl/README.md)。
 
-## 安装
 
-```bash
-git clone https://github.com/ECNU-ICALK/EasyCL.git
-cd EasyCL
-pip install -e . --no-deps
-```
-注意，如果你现在环境下已经安装了LLaMA-Factory或旧版EasyCL，你可能需要卸载现有的然后在重新执行一次安装。
+
 
 ## 数据集格式要求
 
