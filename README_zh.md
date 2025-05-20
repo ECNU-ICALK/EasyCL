@@ -3,7 +3,7 @@
   <img src="assets/logo.png" alt="EasyCL Logo" style="width: 100%;" />
 </p>
 
-EasyCL 是一个强大且易用的针对大语言模型持续学习的工具包。其主要特点包括：一键式操作、自动化流程、适配绝大部分基座大语言模型，并支持多种前沿的持续学习方法。
+EasyCL 是一个强大且易用的针对大语言模型持续学习的工具包。其主要特点包括：一键式操作、自动化流程、多模态支持、适配绝大部分基座大语言模型，并支持多种前沿的持续学习方法。
 
 [ [English](README.md) | [中文](README_zh.md) ]
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -40,7 +40,7 @@ EasyCL 是基于 [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory) 开�
 
 ## 简介
 
-EasyCL 是基于 LLaMA Factory 框架开发的，专注于大型语言模型的持续学习方法。它提供了一套全面的工具和方法，用于解决顺序学习任务中的灾难性遗忘问题。
+EasyCL 是基于 LLaMA Factory 框架开发的，专注于大型语言模型的持续学习方法。它提供了一套全面的工具和方法，用于解决顺序学习任务中的灾难性遗忘问题。它支持对单模态和多模态场景下多种基座模型和数据的训练与评估。
 
 该框架集成了各种专为语言模型设计的最先进持续学习技术，使研究人员和实践者能够轻松实现、比较和开发新方法。
 
@@ -231,20 +231,9 @@ EasyCL 的评估流程同样依赖 `dataset_info.json` 文件来定位和加载�
 
 ## 持续学习训练
 
-EasyCL 致力于简化持续学习的训练流程，提供"一键式"的操作体验，让复杂的配置变得简单。我们的框架能够自动执行单模态和多模态场景下的任务序列训练。
+EasyCL 致力于简化持续学习的训练流程，提供"一键式"的操作体验，让复杂的配置变得简单。我们支持单/多模态的大多数基座模型的训练，并支持分布式训练。
 
-EasyCL 的一个核心优势在于其对持续学习参数的智能管理。根据所选的持续学习方法，框架会自动生成和适配有效学习所需的关键参数。这包括：
-
-*   引用先前任务训练好的模型。
-*   管理来自先前任务的数据集信息。
-*   为经验回放策略构建所需的数据集列表。
-*   处理特定算法所需的共享存储路径，例如用于历史适配器信息或生成的伪样本的路径。
-
-这种自动化特性极大地减少了手动配置的负担，让您可以借助一个真正"简单易用"的工具包，更专注于您的研究和实验。
-
-EasyCL 也支持分布式训练。具体细节如下：
-
-## 分布式训练适配
+### 分布式训练适配
 
 EasyCL 实现了基于 DeepSpeed 的分布式训练，并在不同的 ZeRO 阶段提供了兼容性支持。下表展示了每种持续学习方法在各种 DeepSpeed ZeRO 配置下的适配状态。
 
@@ -408,10 +397,10 @@ easycl-cli cl_workflow --mode full_workflow \
 
 我们的框架可以自动实现 Benchmark 的训练以及评估，并支持多种任务顺序（Order）切换。这使得在标准数据集上复现和比较不同持续学习方法的效果变得更加容易。
 
-我们目前已适配了以下三个常用的 Benchmark：
+我们目前已适配了以下四个常用的 Benchmark：
 
 1.  **LFPT5** - [Lfpt5: A unified framework for lifelong few-shot language learning based on prompt tuning of t5](https://arxiv.org/pdf/2110.07298)
-2.  **Large Number of Tasks Benchmark** - [Orthogonal subspace learning for language model continual learning](https://arxiv.org/pdf/2310.14152)
+2.  **Large Number of Tasks Benchmark (LNT)** - [Orthogonal subspace learning for language model continual learning](https://arxiv.org/pdf/2310.14152)
 3.  **ABSACL_ATSC (Aspect-based Sentiment Analysis Continual Learning)** - [Adapting bert for continual learning of a sequence of aspect sentiment classification tasks](https://arxiv.org/pdf/2112.03271)
 4. **VQA_CL (Visual Question Answering in Continual Learning)** - [View Details](benchmark/VQA_CL/README.md) 
 

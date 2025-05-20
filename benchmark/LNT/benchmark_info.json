@@ -1,5 +1,5 @@
 {
-    "large_number_of_tasks_benchmark": {
+    "LNT": {
         "description": "Large Number of Tasks Benchmark containing various NLP classification and NLI datasets.",
         "orders": {
             "order1": [

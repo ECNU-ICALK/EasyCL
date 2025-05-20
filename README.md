@@ -3,7 +3,7 @@
   <img src="assets/logo.png" alt="EasyCL Logo" style="width: 100%;" />
 </p>
 
-EasyCL is a powerful and user-friendly toolkit for continual learning with large language models. It features one-click operation, automation, compatibility with most base LLMs, and support for multiple state-of-the-art continual learning methods.
+EasyCL is a powerful and user-friendly toolkit for continual learning with large language models. It features one-click operation, automation, multimodal support, compatibility with most base LLMs, and support for multiple state-of-the-art continual learning methods.
 
 [ [English](README.md) | [中文](README_zh.md) ]
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -40,7 +40,7 @@ EasyCL is developed based on [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Fa
 
 ## Introduction
 
-EasyCL is developed based on the LLaMA Factory framework, focusing on continual learning methods for large language models. It provides a comprehensive suite of tools and methods to address the problem of catastrophic forgetting in sequential learning tasks.
+EasyCL is developed based on the LLaMA Factory framework, focusing on continual learning methods for large language models. It provides a comprehensive suite of tools and methods to address the problem of catastrophic forgetting in sequential learning tasks. It supports training and evaluation for various base models and data in both single-modal and multi-modal scenarios.
 
 The framework integrates a variety of state-of-the-art continual learning techniques designed specifically for language models, allowing researchers and practitioners to easily implement, compare, and develop new methods.
 
@@ -233,20 +233,9 @@ When you run \`easycl-cli cl_workflow --mode eval_only --eval_params <your_eval_
 
 ## Continual Learning Training
 
-EasyCL streamlines the continual learning training process, offering a "one-click" experience that simplifies complex setups. Our framework automates the sequential training across tasks for both single-modal and multi-modal scenarios.
+EasyCL streamlines the continual learning training process, offering a "one-click" experience that simplifies complex setups. We support training for most single/multi-modal base models and distributed training.
 
-A key advantage of EasyCL is its intelligent management of continual learning parameters. Based on the selected CL method, the framework automatically generates and adapts essential parameters required for effective learning. This includes:
-
-*   Referencing the model trained on the previous task.
-*   Managing information about datasets from prior tasks.
-*   Constructing lists of datasets for experience replay strategies.
-*   Handling shared storage paths required by specific algorithms, such as those for historical adapter information or generated pseudo-samples.
-
-This automation significantly reduces manual configuration, allowing you to focus on your research and experiments with a truly "simple and easy-to-use" toolkit.
-
-EasyCL also supports distributed training. The details are as follows:
-
-## Distributed Training Compatibility
+### Distributed Training Compatibility
 
 EasyCL implements distributed training using DeepSpeed with compatibility across different ZeRO stages. The table below shows the compatibility status of each continual learning method with various DeepSpeed ZeRO configurations.
 
@@ -410,10 +399,10 @@ For detailed information about workflow configuration and CL metrics, see [src/e
 
 Our framework can automatically handle the training and evaluation of benchmarks, supporting switching between multiple task orders. This makes it easier to reproduce and compare the effects of different continual learning methods on standard datasets.
 
-We currently support the following three commonly used benchmarks:
+We currently support the following four commonly used benchmarks:
 
 1. **LFPT5** - [Lfpt5: A unified framework for lifelong few-shot language learning based on prompt tuning of t5](https://arxiv.org/pdf/2110.07298)
-2. **Large Number of Tasks Benchmark** - [Orthogonal subspace learning for language model continual learning](https://arxiv.org/pdf/2310.14152)
+2. **Large Number of Tasks Benchmark (LNT)** - [Orthogonal subspace learning for language model continual learning](https://arxiv.org/pdf/2310.14152)
 3. **ABSACL_ATSC (Aspect-based Sentiment Analysis Continual Learning)** - [Adapting bert for continual learning of a sequence of aspect sentiment classification tasks](https://arxiv.org/pdf/2112.03271)
 4. **VQA_CL (Visual Question Answering in Continual Learning)** - [View Details](benchmark/VQA_CL/README.md) 
 
