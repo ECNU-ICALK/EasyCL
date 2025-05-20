@@ -12,32 +12,6 @@ EasyCL 是一个强大且易用的针对大语言模型持续学习的工具包�
 
 EasyCL 是基于 [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory) 开发的。我们对 LLaMA-Factory 团队的优秀开源工作表示衷心的感谢。在使用 EasyCL 之前，我们建议阅读 LLaMA-Factory 的 [README](https://github.com/hiyouga/LLaMA-Factory) 和[使用文档](https://llamafactory.readthedocs.io)。
 
-##  状态概览
-
-**注意:** 当前是开发版本。如有问题，请在 Issue 中报告。
-
-<details>
-<summary>🚧 <strong>已知问题 / 即将推出的功能</strong></summary>
-
-*   [待办] ilora在多卡训练的zero2会触发bug。
-*   [功能] 计划添加对 [新方法/功能] 的支持。
-*   优化 [特定过程] 中的内存使用。
-
-</details>
-
-<details>
-<summary>✅ <strong>已解决问题 / 已完成功能</strong></summary>
-
-*   [已解决] 评估未能正确依赖 `dataset_info.json` (2025-04-19)。
-*   [已解决] 评估时使用了过于严格的生成参数（例如 MMLU 的参数）(2025-04-19)。
-*   [已解决] 伪回放 (Pseudo Replay) 方法读取的是 tokenized 数据而非原始数据 (2025-04-20)。
-*   [已解决] 梯度情景记忆 (GEM) 方法存在显存溢出问题 (2025-04-20)。
-*   [已解决] 改善了O-Lora的逻辑，修复了维度不匹配问题 (2025-04-20)。
-*   [已解决] 修复了伪样本生成相关方法的问题，并检查了所有现有方法的参数导入 (2025-04-20)。
-*   [已解决] 多卡逻辑更新与适配 (2025-04-28)。
-
-</details>
-
 ## 目录
 
 - [简介](#简介)
@@ -61,6 +35,7 @@ EasyCL 是基于 [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory) 开�
   - [完整工作流（训练、评估、计算指标）](#完整工作流训练评估计算指标)
 - [Benchmark 适配](#benchmark-适配)
   - [创建自定义 Benchmark](#创建自定义-benchmark)
+- [已知问题与解决记录](#已知问题与解决记录)
 - [许可证](#许可证)
 
 ## 简介
@@ -110,9 +85,6 @@ pip install -e .
 13. **伪回放 (Pseudo Replay)** - [查看实现](src/easycl/cl/pseudo_replay/README.md) - [Experience replay for continual learning](https://proceedings.neurips.cc/paper_files/paper/2019/file/fa7cdfad1a5aaf8370ebeda47a1ff1c3-Paper.pdf)
 
 有关持续学习方法的更多详细信息，请参阅 [src/easycl/cl/README.md](src/easycl/cl/README.md)。
-
-
-
 
 ## 数据集格式要求
 
@@ -462,6 +434,32 @@ easycl-cli cl_workflow --mode full_workflow \\
     *   在此文件中，定义你的 Benchmark 名称、不同的任务顺序 (order)，并指定每个顺序下各个任务所对应的数据集名称（这些名称应与 `dataset_info.json` 中注册的名称一致）。可以参考现有 Benchmark（如 `benchmark/ABSACL_ATSC/benchmark_info.json`）的结构。
 5.  **运行 Benchmark:**
     *   现在你可以使用 `easycl-cli` 命令，并通过 `--benchmark <你的Benchmark名称>` 和 `--benchmark_dir ./benchmark/<你的Benchmark目录>` 参数来运行你的自定义 Benchmark 了。
+
+## 已知问题与解决记录
+
+**注意:** 如有问题，请在 Issue 中报告。
+
+<details>
+<summary>🚧 <strong>已知问题 / 即将推出的功能</strong></summary>
+
+*   [待办] ilora在多卡训练的zero2会触发bug。
+*   [功能] 计划添加对 [新方法/功能] 的支持。
+*   优化 [特定过程] 中的内存使用。
+
+</details>
+
+<details>
+<summary>✅ <strong>已解决问题 / 已完成功能</strong></summary>
+
+*   [已解决] 评估未能正确依赖 `dataset_info.json` (2025-04-19)。
+*   [已解决] 评估时使用了过于严格的生成参数（例如 MMLU 的参数）(2025-04-19)。
+*   [已解决] 伪回放 (Pseudo Replay) 方法读取的是 tokenized 数据而非原始数据 (2025-04-20)。
+*   [已解决] 梯度情景记忆 (GEM) 方法存在显存溢出问题 (2025-04-20)。
+*   [已解决] 改善了O-Lora的逻辑，修复了维度不匹配问题 (2025-04-20)。
+*   [已解决] 修复了伪样本生成相关方法的问题，并检查了所有现有方法的参数导入 (2025-04-20)。
+*   [已解决] 多卡逻辑更新与适配 (2025-04-28)。
+
+</details>
 
 ## 许可证
 

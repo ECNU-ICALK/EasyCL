@@ -12,32 +12,6 @@ EasyCL is a powerful and user-friendly toolkit for continual learning with large
 
 EasyCL is developed based on [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory). We would like to express our gratitude to the LLaMA-Factory team for their excellent open-source work. Before using EasyCL, we recommend reading the LLaMA-Factory's [README](https://github.com/hiyouga/LLaMA-Factory) and [documentation](https://llamafactory.readthedocs.io).
 
-##  Status Overview
-
-**Note:** This is currently a development version. If you find a bug, please raise an issue.
-
-<details>
-<summary>🚧 <strong>Known Issues / Upcoming Features</strong></summary>
-
-*   [TODO] ILoRA triggers bugs during multi-GPU training with ZeRO-2 configuration.
-*   [Feature] Planning to add support for [New Method/Feature].
-*   Optimizing memory usage during [Specific Process].
-
-</details>
-
-<details>
-<summary>✅ <strong>Resolved Issues / Completed Features</strong></summary>
-
-*   [Resolved] Evaluation does not correctly depend on `dataset_info.json` (2025-04-19).
-*   [Resolved] Evaluation uses overly strict generation parameters (e.g., MMLU parameters) (2025-04-19).
-*   [Resolved] Pseudo-replay method reads tokenized data instead of raw data (2025-04-20).
-*   [Resolved] Gradient Episodic Memory (GEM) causes out-of-memory errors (2025-04-20).
-*   [Resolved] Improved O-LoRA logic and fixed dimension mismatch issues (2025-04-20).
-*   [Resolved] Fixed issues related to pseudo-sample generation methods and checked parameter imports for all existing methods (2025-04-20).
-*   [Resolved] Updated and adapted multi-GPU logic (2025-04-28).
-
-</details>
-
 ## Table of Contents
 
 - [Introduction](#introduction)
@@ -61,6 +35,7 @@ EasyCL is developed based on [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Fa
   - [Full Workflow (Train, Evaluate, Calculate Metrics)](#full-workflow-train-evaluate-calculate-metrics)
 - [Benchmark Adaptation](#benchmark-adaptation)
   - [Creating a Custom Benchmark](#creating-a-custom-benchmark)
+- [Known Issues and Resolutions](#known-issues-and-resolutions)
 - [License](#license)
 
 ## Introduction
@@ -461,6 +436,32 @@ If you wish to use your own benchmark, please follow these steps:
    * In this file, define your benchmark name, different task orders, and specify the dataset names corresponding to each task within each order (these names should match those registered in \`dataset_info.json\`). You can refer to the structure of existing benchmarks (e.g., \`benchmark/ABSACL_ATSC/benchmark_info.json\`).
 5. **Run Benchmark:**
    * You can now run your custom benchmark using the \`easycl-cli\` command with the \`--benchmark <YourBenchmarkName>\` and \`--benchmark_dir ./benchmark/<YourBenchmarkDirectory>\` arguments.
+
+## Known Issues and Resolutions
+
+**Note:** If you find a bug, please raise an issue.
+
+<details>
+<summary>🚧 <strong>Known Issues / Upcoming Features</strong></summary>
+
+*   [TODO] ILoRA triggers bugs during multi-GPU training with ZeRO-2 configuration.
+*   [Feature] Planning to add support for [New Method/Feature].
+*   Optimizing memory usage during [Specific Process].
+
+</details>
+
+<details>
+<summary>✅ <strong>Resolved Issues / Completed Features</strong></summary>
+
+*   [Resolved] Evaluation does not correctly depend on `dataset_info.json` (2025-04-19).
+*   [Resolved] Evaluation uses overly strict generation parameters (e.g., MMLU parameters) (2025-04-19).
+*   [Resolved] Pseudo-replay method reads tokenized data instead of raw data (2025-04-20).
+*   [Resolved] Gradient Episodic Memory (GEM) causes out-of-memory errors (2025-04-20).
+*   [Resolved] Improved O-LoRA logic and fixed dimension mismatch issues (2025-04-20).
+*   [Resolved] Fixed issues related to pseudo-sample generation methods and checked parameter imports for all existing methods (2025-04-20).
+*   [Resolved] Updated and adapted multi-GPU logic (2025-04-28).
+
+</details>
 
 ## License
 
