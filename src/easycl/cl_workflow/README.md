@@ -104,7 +104,7 @@ The workflow can calculate standard continual learning metrics using `CLMetricsC
 
 The average accuracy across all tasks *after* the model has finished training on the final (N-th) task. Measures the final overall performance.
 
-\[ \text{Last} = \frac{1}{N} \sum_{i=1}^{N} R_{N,i} \]
+$\[ \text{Last} = \frac{1}{N} \sum_{i=1}^{N} R_{N,i} \]$
 
 Where \( R_{k,i} \) is the accuracy on task \( i \) after training on task \( k \), and \( N \) is the total number of tasks.
 
