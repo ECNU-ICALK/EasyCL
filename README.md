@@ -3,6 +3,8 @@
   <img src="assets/logo.png" alt="EasyCL Logo" style="width: 100%;" />
 </p>
 
+EasyCL is a powerful and user-friendly toolkit for continual learning with large language models. It features one-click operation, automation, compatibility with most base LLMs, and support for multiple state-of-the-art continual learning methods.
+
 [ [English](README.md) | [中文](README_zh.md) ]
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
@@ -12,7 +14,7 @@ EasyCL is developed based on [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Fa
 
 ##  Status Overview
 
-**Note:** This is currently a development version, so you may encounter some bugs. If you find a bug, please raise an issue or contact me via email: caiyuxuanuestc@hotmail.com or WeChat: damowangdongdong. Thank you very much!
+**Note:** This is currently a development version. If you find a bug, please raise an issue.
 
 <details>
 <summary>🚧 <strong>Known Issues / Upcoming Features</strong></summary>
@@ -63,7 +65,7 @@ EasyCL is developed based on [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Fa
 
 ## Introduction
 
-EasyCL is an extension of the LLaMA Factory framework, focusing on continual learning methods for large language models. It provides a comprehensive suite of tools and methods to address the problem of catastrophic forgetting in sequential learning tasks.
+EasyCL is developed based on the LLaMA Factory framework, focusing on continual learning methods for large language models. It provides a comprehensive suite of tools and methods to address the problem of catastrophic forgetting in sequential learning tasks.
 
 The framework integrates a variety of state-of-the-art continual learning techniques designed specifically for language models, allowing researchers and practitioners to easily implement, compare, and develop new methods.
 
@@ -426,6 +428,7 @@ We currently support the following three commonly used benchmarks:
 1. **LFPT5** - [Lfpt5: A unified framework for lifelong few-shot language learning based on prompt tuning of t5](https://arxiv.org/pdf/2110.07298)
 2. **Large Number of Tasks Benchmark** - [Orthogonal subspace learning for language model continual learning](https://arxiv.org/pdf/2310.14152)
 3. **ABSACL_ATSC (Aspect-based Sentiment Analysis Continual Learning)** - [Adapting bert for continual learning of a sequence of aspect sentiment classification tasks](https://arxiv.org/pdf/2112.03271)
+4. **VQA_CL (Visual Question Answering in Continual Learning)** - [View Details](benchmark/VQA_CL/README.md) 
 
 You can use the following command to run benchmark evaluations (Benchmark evaluation currently only supports running in `full_workflow` mode):
 

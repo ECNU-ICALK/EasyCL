@@ -1,0 +1,56 @@
+{
+    "vqav2": {
+        "file_name": "vqav2/vqav2_train.json",
+        "formatting": "sharegpt",
+        "columns": {
+            "images": "image",
+            "messages": "conversations"
+        },
+        "split": "train"
+    },
+    "vqav2_test": {
+        "file_name": "vqav2/vqav2_test.json",
+        "formatting": "sharegpt",
+        "columns": {
+            "images": "image",
+            "messages": "conversations"
+        },
+        "split": "test"
+    },
+    "vizwiz": {
+        "file_name": "vizwiz/vizwiz_train.json",
+        "formatting": "sharegpt",
+        "columns": {
+            "images": "image",
+            "messages": "conversations"
+        },
+        "split": "train"
+    },
+    "vizwiz_test": {
+        "file_name": "vizwiz/vizwiz_test.json",
+        "formatting": "sharegpt",
+        "columns": {
+            "images": "image",
+            "messages": "conversations"
+        },
+        "split": "test"
+    },
+    "scienceqa": {
+        "file_name": "scienceqa/scienceqa_train.json",
+        "formatting": "sharegpt",
+        "columns": {
+            "images": "image",
+            "messages": "conversations"
+        },
+        "split": "train"
+    },
+    "scienceqa_test": {
+        "file_name": "scienceqa/scienceqa_test.json",
+        "formatting": "sharegpt",
+        "columns": {
+            "images": "image",
+            "messages": "conversations"
+        },
+        "split": "test"
+    }
+}

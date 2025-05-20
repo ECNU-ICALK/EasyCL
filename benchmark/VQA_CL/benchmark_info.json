@@ -1,0 +1,22 @@
+{
+    "VQA_CL": {
+        "description": "VQA_CL benchmark",
+        "orders": {
+            "order1": [
+                "vqav2",
+                "vizwiz",
+                "scienceqa"
+            ],
+            "order2": [
+                "scienceqa",
+                "vqav2",
+                "vizwiz"
+            ],
+            "order3": [
+                "vizwiz",
+                "vqav2",
+                "scienceqa"
+            ]
+        }
+    }
+}

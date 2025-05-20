@@ -3,6 +3,8 @@
   <img src="assets/logo.png" alt="EasyCL Logo" style="width: 100%;" />
 </p>
 
+EasyCL 是一个强大且易用的针对大语言模型持续学习的工具包。其主要特点包括：一键式操作、自动化流程、适配绝大部分基座大语言模型，并支持多种前沿的持续学习方法。
+
 [ [English](README.md) | [中文](README_zh.md) ]
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
@@ -12,7 +14,7 @@ EasyCL 是基于 [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory) 开�
 
 ##  状态概览
 
-**注意:** 当前是开发版本，所以可能会遇到一些bug。如果你遇到bug，请在issue中向我提出，或者通过邮箱:caiyuxuanuestc@hotmail.com或微信damowangdongdong与我联系，非常感谢！
+**注意:** 当前是开发版本。如有问题，请在 Issue 中报告。
 
 <details>
 <summary>🚧 <strong>已知问题 / 即将推出的功能</strong></summary>
@@ -63,7 +65,7 @@ EasyCL 是基于 [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory) 开�
 
 ## 简介
 
-EasyCL 是 LLaMA Factory 框架的扩展，专注于大型语言模型的持续学习方法。它提供了一套全面的工具和方法，用于解决顺序学习任务中的灾难性遗忘问题。
+EasyCL 是基于 LLaMA Factory 框架开发的，专注于大型语言模型的持续学习方法。它提供了一套全面的工具和方法，用于解决顺序学习任务中的灾难性遗忘问题。
 
 该框架集成了各种专为语言模型设计的最先进持续学习技术，使研究人员和实践者能够轻松实现、比较和开发新方法。
 
@@ -427,6 +429,7 @@ easycl-cli cl_workflow --mode full_workflow \
 1.  **LFPT5** - [Lfpt5: A unified framework for lifelong few-shot language learning based on prompt tuning of t5](https://arxiv.org/pdf/2110.07298)
 2.  **Large Number of Tasks Benchmark** - [Orthogonal subspace learning for language model continual learning](https://arxiv.org/pdf/2310.14152)
 3.  **ABSACL_ATSC (Aspect-based Sentiment Analysis Continual Learning)** - [Adapting bert for continual learning of a sequence of aspect sentiment classification tasks](https://arxiv.org/pdf/2112.03271)
+4. **VQA_CL (Visual Question Answering in Continual Learning)** - [View Details](benchmark/VQA_CL/README.md) 
 
 你可以使用如下命令来进行 Benchmark 评估（Benchmark 评估目前只支持在 `full_workflow` 模式下运行）：
 
