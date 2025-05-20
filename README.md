@@ -334,22 +334,22 @@ The primary metrics computed are:
 
 1.  **Last (Overall Performance)**:
     *   Measures the model's average accuracy across all $N$ tasks after it has been sequentially trained on all of them.
-    *   **Formula**: $ \text{Last} = \frac{1}{N} \sum_{i=1}^{N} R_{N,i} $
+    *   **Formula**: $$ \text{Last} = \frac{1}{N} \sum_{i=1}^{N} R_{N,i} $$
     *   Where $R_{N,i}$ is the accuracy of the model on task $i$ after being trained on all $N$ tasks.
 
 2.  **Avg (Average Accuracy)**:
     *   Represents the average of the mean accuracies obtained at each step of the continual learning process. Specifically, after learning each task $k$, the model's average accuracy on all tasks learned so far (from 1 to $k$) is computed. The Avg metric is the average of these per-step average accuracies.
-    *   **Formula**: $ \text{Avg} = \frac{1}{N} \sum_{k=1}^{N} \left( \frac{1}{k} \sum_{i=1}^{k} R_{k,i} \right) $
+    *   **Formula**: $$ \text{Avg} = \frac{1}{N} \sum_{k=1}^{N} \left( \frac{1}{k} \sum_{i=1}^{k} R_{k,i} \right) $$
     *   Where $R_{k,i}$ is the accuracy of the model on task $i$ after being trained sequentially on tasks 1 through $k$.
 
 3.  **BWT (Backward Transfer / Forgetfulness)**:
     *   Measures how much the learning of new tasks negatively impacts the performance on previously learned tasks (i.e., forgetting). A higher positive value indicates better retention (less forgetting), while a negative value indicates significant forgetting.
-    *   **Formula**: $ \text{BWT} = \frac{1}{N-1} \sum_{i=1}^{N-1} (R_{N,i} - R_{i,i}) $
+    *   **Formula**: $$ \text{BWT} = \frac{1}{N-1} \sum_{i=1}^{N-1} (R_{N,i} - R_{i,i}) $$
     *   Where $R_{N,i}$ is the accuracy on task $i$ after training on all $N$ tasks, and $R_{i,i}$ is the accuracy on task $i$ immediately after it was learned (i.e., after training on tasks 1 through $i$). This metric is defined for $N > 1$.
 
 4.  **FWT (Forward Transfer)**:
     *   Measures how much knowledge gained from learning previous tasks helps in learning new, subsequent tasks. A positive value indicates beneficial forward transfer.
-    *   **Formula**: $ \text{FWT} = \frac{1}{N-1} \sum_{i=2}^{N} (R_{i-1,i} - R_{0,i}) $
+    *   **Formula**: $$ \text{FWT} = \frac{1}{N-1} \sum_{i=2}^{N} (R_{i-1,i} - R_{0,i}) $$
     *   Where $R_{i-1,i}$ is the accuracy on task $i$ after training on tasks 1 through $i-1$ (i.e., performance on task $i$ *before* it is explicitly trained, but after learning previous tasks), and $R_{0,i}$ is the accuracy on task $i$ by the base model (before any continual learning). This metric is defined for $N > 1$.
 
 ## Workflow

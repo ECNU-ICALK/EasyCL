@@ -104,7 +104,7 @@ The workflow can calculate standard continual learning metrics using `CLMetricsC
 
 The average accuracy across all tasks *after* the model has finished training on the final (N-th) task. Measures the final overall performance.
 
-$ \text{Last} = \frac{1}{N} \sum_{i=1}^{N} R_{N,i} $
+$$ \text{Last} = \frac{1}{N} \sum_{i=1}^{N} R_{N,i} $$
 
 Where $ R_{k,i} $ is the accuracy on task $ i $ after training on task $ k $, and $ N $ is the total number of tasks.
 
@@ -112,13 +112,13 @@ Where $ R_{k,i} $ is the accuracy on task $ i $ after training on task $ k $, an
 
 The average of the mean accuracy across *learned* tasks at each step of the CL process. Reflects the overall performance throughout the learning sequence.
 
-$ \text{Avg} = \frac{1}{N} \sum_{k=1}^{N} \left( \frac{1}{k} \sum_{i=1}^{k} R_{k,i} \right) $
+$$ \text{Avg} = \frac{1}{N} \sum_{k=1}^{N} \left( \frac{1}{k} \sum_{i=1}^{k} R_{k,i} \right) $$
 
 ### Backward Transfer (BWT)
 
 Measures the influence that learning a new task has on the performance of previously learned tasks (often indicates forgetting). It's the average difference between the accuracy on a task right after learning it versus after learning all subsequent tasks.
 
-$ \text{BWT} = \frac{1}{N-1} \sum_{i=1}^{N-1} (R_{N,i} - R_{i,i}) $
+$$ \text{BWT} = \frac{1}{N-1} \sum_{i=1}^{N-1} (R_{N,i} - R_{i,i}) $$
 
 A negative BWT typically indicates forgetting.
 
@@ -126,7 +126,7 @@ A negative BWT typically indicates forgetting.
 
 Measures the influence of previously learned knowledge on learning new tasks. It's the average difference between the accuracy on a task after learning preceding tasks versus the accuracy on that task using the initial base model ($ R_{0,i} $).
 
-$ \text{FWT} = \frac{1}{N-1} \sum_{i=2}^{N} (R_{i-1,i} - R_{0,i}) $
+$$ \text{FWT} = \frac{1}{N-1} \sum_{i=2}^{N} (R_{i-1,i} - R_{0,i}) $$
 
 A positive FWT indicates that previous learning helped improve performance on new tasks compared to starting from scratch ($ R_{0,i} $).
 
