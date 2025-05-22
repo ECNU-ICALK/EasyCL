@@ -88,26 +88,65 @@ class CLEvaluator:
             # 设置任务名
             eval_args_copy.task = task
 
-            # Updated dataset_path logic
-            task_name = task.split("_")[0]
-            test_filename = f"{task_name}_test.json"
-            task_dir = getattr(self.cl_eval_args, "task_dir", "./data")
+            # --- BEGIN MODIFIED PATH LOGIC ---
+            task_dir = getattr(self.cl_eval_args, "task_dir", None)
+            dataset_info_json_path = None
+            dataset_path_resolved = False
 
-            # Try loading from task_dir first
-            potential_path = os.path.join(task_dir, test_filename)
-            if os.path.exists(potential_path):
-                dataset_path = potential_path
-                logger.info(f"Found test dataset for selector in task_dir: {dataset_path}")
-            else:
-                # Fallback to ./data
-                potential_path = os.path.join("./data", test_filename)
-                if os.path.exists(potential_path):
-                    dataset_path = potential_path
-                    logger.info(f"Found test dataset for selector in fallback ./data: {dataset_path}")
+            if task_dir and os.path.isdir(task_dir):
+                dataset_info_json_path = os.path.join(task_dir, "dataset_info.json")
+                if os.path.exists(dataset_info_json_path):
+                    try:
+                        with open(dataset_info_json_path, "r", encoding="utf-8") as f:
+                            dataset_info = json.load(f)
+                        
+                        task_entry = dataset_info.get(task)
+                        if task_entry and isinstance(task_entry, dict):
+                            file_name = task_entry.get("file_name")
+                            if file_name and isinstance(file_name, str):
+                                potential_path_from_info = os.path.join(task_dir, file_name)
+                                if os.path.exists(potential_path_from_info):
+                                    dataset_path = potential_path_from_info
+                                    dataset_path_resolved = True
+                                    logger.info(f"Found test dataset for selector via dataset_info.json: {dataset_path}")
+                                else:
+                                    logger.warning(f"Path from dataset_info.json for task \'{task}\' does not exist: {potential_path_from_info}")
+                            else:
+                                logger.warning(f"\'file_name\' not found or invalid for task \'{task}\' in {dataset_info_json_path}")
+                        else:
+                            logger.warning(f"Task \'{task}\' not found in {dataset_info_json_path}")
+                    except Exception as e:
+                        logger.warning(f"Error reading or parsing {dataset_info_json_path}: {str(e)}")
                 else:
-                    logger.error(f"Test dataset '{test_filename}' not found in task_dir '{task_dir}' or fallback './data'. Cannot run selector.")
-                    return False
+                    logger.info(f"dataset_info.json not found in task_dir: {task_dir}. Will use fallback path logic.")
+            else:
+                logger.info("task_dir is not set or not a directory. Will use fallback path logic.")
 
+            if not dataset_path_resolved:
+                logger.info(f"Falling back to original path logic for task: {task}")
+                task_name_for_fallback = task.split("_")[0] # Original logic used task.split("_")[0]
+                test_filename_fallback = f"{task_name_for_fallback}_test.json"
+                
+                # Fallback 1: task_dir (if set)
+                if task_dir and os.path.isdir(task_dir):
+                    potential_path_fallback1 = os.path.join(task_dir, test_filename_fallback)
+                    if os.path.exists(potential_path_fallback1):
+                        dataset_path = potential_path_fallback1
+                        dataset_path_resolved = True
+                        logger.info(f"Found test dataset for selector in task_dir (fallback): {dataset_path}")
+                
+                # Fallback 2: ./data (if not resolved by Fallback 1)
+                if not dataset_path_resolved:
+                    potential_path_fallback2 = os.path.join("./data", test_filename_fallback)
+                    if os.path.exists(potential_path_fallback2):
+                        dataset_path = potential_path_fallback2
+                        dataset_path_resolved = True
+                        logger.info(f"Found test dataset for selector in ./data (fallback): {dataset_path}")
+                    else:
+                        logger.error(f"Test dataset \'{test_filename_fallback}\' not found in task_dir \'{task_dir if task_dir else 'N/A'}\' or fallback \'./data\'. Cannot run selector.")
+                        return False
+            # --- END MODIFIED PATH LOGIC ---
+            
             # 运行选择器
             select_adapter(
                 model_args=model_args_copy,
@@ -161,25 +200,64 @@ class CLEvaluator:
             # 设置任务名
             eval_args_copy.task = task
 
-            # Updated dataset_path logic
-            task_name = task.split("_")[0]
-            test_filename = f"{task_name}_test.json"
-            task_dir = getattr(self.cl_eval_args, "task_dir", "./data")
+            # --- BEGIN MODIFIED PATH LOGIC ---
+            task_dir = getattr(self.cl_eval_args, "task_dir", None)
+            dataset_info_json_path = None
+            dataset_path_resolved = False
 
-            # Try loading from task_dir first
-            potential_path = os.path.join(task_dir, test_filename)
-            if os.path.exists(potential_path):
-                dataset_path = potential_path
-                logger.info(f"Found test dataset for selector in task_dir: {dataset_path}")
-            else:
-                # Fallback to ./data
-                potential_path = os.path.join("./data", test_filename)
-                if os.path.exists(potential_path):
-                    dataset_path = potential_path
-                    logger.info(f"Found test dataset for selector in fallback ./data: {dataset_path}")
+            if task_dir and os.path.isdir(task_dir):
+                dataset_info_json_path = os.path.join(task_dir, "dataset_info.json")
+                if os.path.exists(dataset_info_json_path):
+                    try:
+                        with open(dataset_info_json_path, "r", encoding="utf-8") as f:
+                            dataset_info = json.load(f)
+                        
+                        task_entry = dataset_info.get(task)
+                        if task_entry and isinstance(task_entry, dict):
+                            file_name = task_entry.get("file_name")
+                            if file_name and isinstance(file_name, str):
+                                potential_path_from_info = os.path.join(task_dir, file_name)
+                                if os.path.exists(potential_path_from_info):
+                                    dataset_path = potential_path_from_info
+                                    dataset_path_resolved = True
+                                    logger.info(f"Found test dataset for selector via dataset_info.json: {dataset_path}")
+                                else:
+                                    logger.warning(f"Path from dataset_info.json for task \'{task}\' does not exist: {potential_path_from_info}")
+                            else:
+                                logger.warning(f"\'file_name\' not found or invalid for task \'{task}\' in {dataset_info_json_path}")
+                        else:
+                            logger.warning(f"Task \'{task}\' not found in {dataset_info_json_path}")
+                    except Exception as e:
+                        logger.warning(f"Error reading or parsing {dataset_info_json_path}: {str(e)}")
                 else:
-                    logger.error(f"Test dataset '{test_filename}' not found in task_dir '{task_dir}' or fallback './data'. Cannot run selector.")
-                    return False
+                    logger.info(f"dataset_info.json not found in task_dir: {task_dir}. Will use fallback path logic.")
+            else:
+                logger.info("task_dir is not set or not a directory. Will use fallback path logic.")
+
+            if not dataset_path_resolved:
+                logger.info(f"Falling back to original path logic for task: {task}")
+                task_name_for_fallback = task.split("_")[0] # Original logic used task.split("_")[0]
+                test_filename_fallback = f"{task_name_for_fallback}_test.json"
+                
+                # Fallback 1: task_dir (if set)
+                if task_dir and os.path.isdir(task_dir):
+                    potential_path_fallback1 = os.path.join(task_dir, test_filename_fallback)
+                    if os.path.exists(potential_path_fallback1):
+                        dataset_path = potential_path_fallback1
+                        dataset_path_resolved = True
+                        logger.info(f"Found test dataset for selector in task_dir (fallback): {dataset_path}")
+                
+                # Fallback 2: ./data (if not resolved by Fallback 1)
+                if not dataset_path_resolved:
+                    potential_path_fallback2 = os.path.join("./data", test_filename_fallback)
+                    if os.path.exists(potential_path_fallback2):
+                        dataset_path = potential_path_fallback2
+                        dataset_path_resolved = True
+                        logger.info(f"Found test dataset for selector in ./data (fallback): {dataset_path}")
+                    else:
+                        logger.error(f"Test dataset \'{test_filename_fallback}\' not found in task_dir \'{task_dir if task_dir else 'N/A'}\' or fallback \'./data\'. Cannot run selector.")
+                        return False
+            # --- END MODIFIED PATH LOGIC ---
 
             # 运行选择器
             select_adapter_dynamic_conpet(
