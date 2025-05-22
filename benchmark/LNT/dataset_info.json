@@ -1,5 +1,5 @@
 {
-    "agnews_train": {
+    "agnews": {
         "file_name": "agnews/agnews_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -14,7 +14,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "amazon_train": {
+    "amazon": {
         "file_name": "amazon/amazon_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -29,7 +29,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "BoolQA_train": {
+    "BoolQA": {
         "file_name": "BoolQA/BoolQA_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -44,7 +44,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "CB_train": {
+    "CB": {
         "file_name": "CB/CB_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -59,7 +59,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "COPA_train": {
+    "COPA": {
         "file_name": "COPA/COPA_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -74,7 +74,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "dbpedia_train": {
+    "dbpedia": {
         "file_name": "dbpedia/dbpedia_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -89,7 +89,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "IMDB_train": {
+    "IMDB": {
         "file_name": "IMDB/IMDB_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -104,7 +104,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "MNLI_train": {
+    "MNLI": {
         "file_name": "MNLI/MNLI_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -119,7 +119,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "MultiRC_train": {
+    "MultiRC": {
         "file_name": "MultiRC/MultiRC_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -134,7 +134,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "QQP_train": {
+    "QQP": {
         "file_name": "QQP/QQP_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -149,7 +149,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "RTE_train": {
+    "RTE": {
         "file_name": "RTE/RTE_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -164,7 +164,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "SST-2_train": {
+    "SST-2": {
         "file_name": "SST-2/SST-2_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -179,7 +179,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "WiC_train": {
+    "WiC": {
         "file_name": "WiC/WiC_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -194,7 +194,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "yahoo_train": {
+    "yahoo": {
         "file_name": "yahoo/yahoo_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -209,7 +209,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "yelp_train": {
+    "yelp": {
         "file_name": "yelp/yelp_train.json",
         "formatting": "alpaca",
         "split": "train"

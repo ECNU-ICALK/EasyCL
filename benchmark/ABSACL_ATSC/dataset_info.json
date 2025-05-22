@@ -1,5 +1,5 @@
 {
-    "ApexAD2600Progressive_train": {
+    "ApexAD2600Progressive": {
         "file_name": "ApexAD2600Progressive/ApexAD2600Progressive_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -14,7 +14,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "CanonG3_train": {
+    "CanonG3": {
         "file_name": "CanonG3/CanonG3_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -29,7 +29,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "CanonPowerShotSD500_train": {
+    "CanonPowerShotSD500": {
         "file_name": "CanonPowerShotSD500/CanonPowerShotSD500_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -44,7 +44,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "CanonS100_train": {
+    "CanonS100": {
         "file_name": "CanonS100/CanonS100_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -59,7 +59,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "Computer_train": {
+    "Computer": {
         "file_name": "Computer/Computer_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -74,7 +74,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "CreativeLabsNomadJukeboxZenXtra40GB_train": {
+    "CreativeLabsNomadJukeboxZenXtra40GB": {
         "file_name": "CreativeLabsNomadJukeboxZenXtra40GB/CreativeLabsNomadJukeboxZenXtra40GB_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -89,7 +89,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "DiaperChamp_train": {
+    "DiaperChamp": {
         "file_name": "DiaperChamp/DiaperChamp_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -104,7 +104,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "HitachiRouter_train": {
+    "HitachiRouter": {
         "file_name": "HitachiRouter/HitachiRouter_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -119,7 +119,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "LinksysRouter_train": {
+    "LinksysRouter": {
         "file_name": "LinksysRouter/LinksysRouter_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -134,7 +134,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "MicroMP3_train": {
+    "MicroMP3": {
         "file_name": "MicroMP3/MicroMP3_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -149,7 +149,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "NikonCoolpix4300_train": {
+    "NikonCoolpix4300": {
         "file_name": "NikonCoolpix4300/NikonCoolpix4300_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -164,7 +164,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "Nokia6600_train": {
+    "Nokia6600": {
         "file_name": "Nokia6600/Nokia6600_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -179,7 +179,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "Nokia6610_train": {
+    "Nokia6610": {
         "file_name": "Nokia6610/Nokia6610_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -194,7 +194,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "Norton_train": {
+    "Norton": {
         "file_name": "Norton/Norton_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -209,7 +209,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "Router_train": {
+    "Router": {
         "file_name": "Router/Router_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -224,7 +224,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "Speaker_train": {
+    "Speaker": {
         "file_name": "Speaker/Speaker_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -239,7 +239,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "ipod_train": {
+    "ipod": {
         "file_name": "ipod/ipod_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -254,7 +254,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "laptop_train": {
+    "laptop": {
         "file_name": "laptop/laptop_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -269,7 +269,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "rest_train": {
+    "rest": {
         "file_name": "rest/rest_train.json",
         "formatting": "alpaca",
         "split": "train"

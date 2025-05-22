@@ -1,5 +1,5 @@
 {
-    "agnews_train": {
+    "agnews": {
         "file_name": "agnews/agnews_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -14,7 +14,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "amazon_train": {
+    "amazon": {
         "file_name": "amazon/amazon_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -29,7 +29,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "dbpedia_train": {
+    "dbpedia": {
         "file_name": "dbpedia/dbpedia_train.json",
         "formatting": "alpaca",
         "split": "train"
@@ -44,7 +44,7 @@
         "formatting": "alpaca",
         "split": "test"
     },
-    "yahoo_train": {
+    "yahoo": {
         "file_name": "yahoo/yahoo_train.json",
         "formatting": "alpaca",
         "split": "train"
