@@ -22,7 +22,49 @@
                 "ipod",
                 "laptop",
                 "rest"
+            ],
+            "order2": [
+                "NikonCoolpix4300",
+                "Nokia6600",
+                "Nokia6610",
+                "Norton",
+                "Router",
+                "Speaker",
+                "ipod",
+                "laptop",
+                "rest",
+                "ApexAD2600Progressive",
+                "CanonG3",
+                "CanonPowerShotSD500",
+                "CanonS100",
+                "Computer",
+                "CreativeLabsNomadJukeboxZenXtra40GB",
+                "DiaperChamp",
+                "HitachiRouter",
+                "LinksysRouter",
+                "MicroMP3"
+            ],
+            "order3": [
+                "NikonCoolpix4300",
+                "Nokia6600",
+                "laptop",
+                "rest",
+                "ApexAD2600Progressive",
+                "CanonG3",
+                "CanonPowerShotSD500",
+                "CanonS100",
+                "Computer",
+                "Nokia6610",
+                "Norton",
+                "Router",
+                "Speaker",
+                "ipod",
+                "CreativeLabsNomadJukeboxZenXtra40GB",
+                "DiaperChamp",
+                "HitachiRouter",
+                "LinksysRouter",
+                "MicroMP3"
             ]
         }
     }
-} 
+}
