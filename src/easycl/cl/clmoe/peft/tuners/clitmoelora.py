@@ -326,6 +326,7 @@ class CLMoEMOELoraLinear(nn.Linear, CLMoEMOELoraLayer):
         self.topk = 2
 
         self.output_dir = None
+        self.last_save_time = None # Add new attribute to track last save time
 
         nn.Linear.__init__(self, in_features, out_features, **kwargs)
         CLMoEMOELoraLayer.__init__(self, in_features=in_features, 
@@ -430,29 +431,25 @@ class CLMoEMOELoraLinear(nn.Linear, CLMoEMOELoraLayer):
             else:
                 warnings.warn("self.output_dir is not set in CLMoEMOELoraLinear. Cannot read task file or write statistics.")
 
-            current_time = datetime.datetime.now()
-            current_second = current_time.second
+            if self.output_dir: # Only proceed if output_dir is set
+                current_time = datetime.datetime.now() # Get current time for the check
+                if self.last_save_time is None or (current_time - self.last_save_time).total_seconds() >= 1.0:
+                    self.last_save_time = current_time # Update last save time before attempting file operations
 
-            if current_second == 30 and self.output_dir: # Only write if output_dir is set
-                router_topk_values, router_topk_indices = torch.topk(router, 2, dim=-1)
-                invalid_mask = (router_topk_values[:,:,0] == router_topk_values[:,:,1])
-                router_topk_indices[invalid_mask] = -1
-                flattened_tensor = router_topk_indices.cpu().flatten()
-                unique_values, counts = np.unique(flattened_tensor, return_counts=True)
-                txt_file_path = os.path.join(self.output_dir, f"value_counts_{task}.txt") # Use output_dir
-                try:
-                    # Ensure output directory exists for writing the stats file
-                    os.makedirs(self.output_dir, exist_ok=True)
-                    with open(txt_file_path, "a", encoding="utf-8") as txt_file:
-                        for value, count in zip(unique_values, counts):
-                            txt_file.write(f"{value}:{count}\n")
-                except Exception as e:
-                    warnings.warn(f"Failed to write expert statistics to {txt_file_path}: {e}")
-            elif current_second == 30 and not self.output_dir:
-                 warnings.warn("Cannot write expert statistics because self.output_dir is not set.")
-
-            # alpha = 0.5
-            # arr = [] # The contribution of top-2 experts infered from the statistics
+                    router_topk_values, router_topk_indices = torch.topk(router, 2, dim=-1)
+                    invalid_mask = (router_topk_values[:,:,0] == router_topk_values[:,:,1])
+                    router_topk_indices[invalid_mask] = -1
+                    flattened_tensor = router_topk_indices.cpu().flatten()
+                    unique_values, counts = np.unique(flattened_tensor, return_counts=True)
+                    txt_file_path = os.path.join(self.output_dir, f"value_counts_{task}.txt") # Use output_dir
+                    try:
+                        # Ensure output directory exists for writing the stats file
+                        os.makedirs(self.output_dir, exist_ok=True)
+                        with open(txt_file_path, "a", encoding="utf-8") as txt_file:
+                            for value, count in zip(unique_values, counts):
+                                txt_file.write(f"{value}:{count}\n")
+                    except Exception as e:
+                        warnings.warn(f"Failed to write expert statistics to {txt_file_path}: {e}")
 
             for i in range(self.expert_num):
                 result += ( # lora process
