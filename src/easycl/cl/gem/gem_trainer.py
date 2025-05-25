@@ -86,13 +86,59 @@ class GEMSeq2SeqTrainer(CustomSeq2SeqTrainer):
         # as we don't optimize based on memory alone in this step.
         if not has_current_samples:
             logger.warning_once(f"[RANK {rank}] Received a batch with only memory samples. Skipping GEM gradient calculation for this batch.")
-            # Still might need to compute outputs if requested for evaluation etc.
-            if return_outputs:
-                debugprint(f"[RANK {rank}] GEM compute_loss: 只有记忆样本, 返回 0 损失和 None 输出") # Debug print for memory-only batch (return outputs)
-                return (torch.tensor(0.0, device=model.device, requires_grad=True), None) if return_outputs else torch.tensor(0.0, device=model.device, requires_grad=True)
+            
+            effective_loss = torch.tensor(0.0, device=model.device, requires_grad=True) # Default
+
+            if has_memory_samples:
+                # Try to compute a real loss on memory samples then zero it out
+                # to ensure gradients are populated as zeros rather than None.
+                # This helps avoid issues with optimizers like DeepSpeed during gradient norm calculation.
+                memory_inputs_for_dummy_pass = {
+                    k: v[memory_mask]
+                    for k, v in inputs.items()
+                    # Exclude 'is_memory' and ensure tensor is per-sample and compatible
+                    if k != "is_memory" and isinstance(v, torch.Tensor) and v.shape[0] == inputs["is_memory"].shape[0]
+                }
+                # Filter out tensors that became empty after masking
+                memory_inputs_for_dummy_pass = {
+                    k: val_masked for k, val_masked in memory_inputs_for_dummy_pass.items() if val_masked.numel() > 0
+                }
+
+                if memory_inputs_for_dummy_pass.get("input_ids") is not None: # 'input_ids' is crucial
+                    try:
+                        debugprint(f"[RANK {rank}] GEM compute_loss: Memory-only batch. Performing forward pass on memory data to establish graph for zero gradients. Input keys: {list(memory_inputs_for_dummy_pass.keys())}")
+                        # This compute_loss is from CustomSeq2SeqTrainer or its parent.
+                        loss_from_mem_samples = super().compute_loss(model, memory_inputs_for_dummy_pass, return_outputs=False)
+
+                        # Multiply by 0.0. If loss_from_mem_samples requires grad, the result should too.
+                        effective_loss = loss_from_mem_samples * 0.0
+                        debugprint(f"[RANK {rank}] GEM compute_loss: Loss from memory samples (before zeroing): {loss_from_mem_samples.item()}. Effective loss for backward: {effective_loss.item()}. Requires grad: {effective_loss.requires_grad}")
+
+                        # Sanity check: ensure it still requires grad if original did and operation lost it
+                        if loss_from_mem_samples.requires_grad and not effective_loss.requires_grad:
+                            effective_loss = effective_loss.clone().detach().requires_grad_(True)
+                            debugprint(f"[RANK {rank}] GEM compute_loss: Re-enabled requires_grad for zeroed effective_loss.")
+                    
+                    except Exception as e:
+                        logger.error(f"[RANK {rank}] Error during dummy forward pass on memory samples for zero-grad purpose: {e}. Defaulting to simple 0.0 tensor.")
+                        debugprint(f"[RANK {rank}] GEM compute_loss: Error in dummy forward pass: {e}. Using default 0.0 tensor.")
+                        # Fallback to the original simple tensor if dummy pass fails
+                        effective_loss = torch.tensor(0.0, device=model.device, requires_grad=True)
+                else:
+                    debugprint(f"[RANK {rank}] GEM compute_loss: Memory-only batch, but 'input_ids' missing/empty for dummy pass. Using default 0.0 tensor.")
+                    effective_loss = torch.tensor(0.0, device=model.device, requires_grad=True)
             else:
-                 debugprint(f"[RANK {rank}] GEM compute_loss: 只有记忆样本, 返回 0 损失") # Debug print for memory-only batch
-                 return torch.tensor(0.0, device=model.device, requires_grad=True)
+                # No current samples AND no memory samples (e.g., empty batch after filtering, or malformed initial batch)
+                debugprint(f"[RANK {rank}] GEM compute_loss: Batch has neither current nor memory samples. Using default 0.0 tensor.")
+                effective_loss = torch.tensor(0.0, device=model.device, requires_grad=True)
+
+            if return_outputs:
+                # For outputs, since we are skipping current task, there are no "current" outputs.
+                debugprint(f"[RANK {rank}] GEM compute_loss: Memory-only batch, returning effective_loss: {effective_loss.item()} and None outputs")
+                return (effective_loss, None)
+            else:
+                debugprint(f"[RANK {rank}] GEM compute_loss: Memory-only batch, returning effective_loss: {effective_loss.item()}")
+                return effective_loss
 
         # Separate inputs
         # Ensure we handle metadata columns gracefully (like 'is_memory')
