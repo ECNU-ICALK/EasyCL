@@ -875,15 +875,51 @@ class CLWorkflow:
             # Evaluate base model if required by workflow mode
             if self.workflow_args.mode in ["full_workflow", "train_then_eval"]: # Evaluate base/initial state before task 0 training
                 logger.info_rank0("Generating eval command for initial model state (before task 0)...")
-                # Use adapter path if provided directly, otherwise assume base model eval
-                initial_eval_path = self.train_kwargs.get("adapter_name_or_path", base_model_path_for_eval)
-                is_evaluating_lora_initially = bool(self.train_kwargs.get("adapter_name_or_path"))
+                
+                # Determine base model and adapter paths for the command
+                # base_model_path_for_eval is already defined above from self.train_kwargs
+
+                task_output_dir_for_command: Optional[str]
+                base_model_path_for_command_arg: Optional[str] # Renamed to avoid conflict with outer scope base_model_path
+                is_lora_for_command_gen: bool
+
+                is_clmoe_base_eval = self.eval_kwargs.get("use_clmoe_eval", False)
+                is_moelora_base_eval = self.eval_kwargs.get("use_moelora_eval", False) # New check
+
+                if is_clmoe_base_eval or is_moelora_base_eval: # Combined condition
+                    eval_method_name = "CL-MoE" if is_clmoe_base_eval else "MoE-LoRA"
+                    logger.info_rank0(f"{eval_method_name} base evaluation detected. Adapter path will be taken from eval_kwargs.")
+                    is_lora_for_command_gen = True # Both are adapter-based
+                    task_output_dir_for_command = self.eval_kwargs.get("adapter_name_or_path") # This is the specific adapter path
+                    base_model_path_for_command_arg = base_model_path_for_eval # This is the underlying base model
+                    
+                    if not task_output_dir_for_command:
+                        # This error will ultimately be raised by CLEvalEvaluator, but good to log here.
+                        logger.error( # Use standard logger.error for actual errors
+                            f"{eval_method_name} base evaluation is enabled, but 'adapter_name_or_path' is missing in evaluation parameters. "
+                            "Evaluation will likely fail."
+                        )
+                else:
+                    # Standard logic for base model evaluation (could be full model or LoRA from train_kwargs)
+                    adapter_from_train_kwargs = self.train_kwargs.get("adapter_name_or_path")
+                    if adapter_from_train_kwargs:
+                        # Base model is a LoRA model specified in train_kwargs
+                        logger.info_rank0("Base model evaluation: Using adapter from train_kwargs.")
+                        is_lora_for_command_gen = True
+                        task_output_dir_for_command = adapter_from_train_kwargs
+                        base_model_path_for_command_arg = base_model_path_for_eval
+                    else:
+                        # Base model is a full model (no adapter in train_kwargs)
+                        logger.info_rank0("Base model evaluation: Using full model path from train_kwargs.")
+                        is_lora_for_command_gen = False
+                        task_output_dir_for_command = base_model_path_for_eval # Evaluating the base model directly
+                        base_model_path_for_command_arg = None # No separate base model when evaluating a full model path
 
                 base_eval_cmd = self.command_generator.generate_eval_command(
-                    task_output_dir=initial_eval_path,
-                    task_id=None, # Indicate base/initial model
-                    is_lora=is_evaluating_lora_initially,
-                    base_model_path=base_model_path_for_eval if is_evaluating_lora_initially else None
+                    task_output_dir=task_output_dir_for_command,
+                    task_id=None, 
+                    is_lora=is_lora_for_command_gen,
+                    base_model_path=base_model_path_for_command_arg
                 )
                 eval_commands.append(base_eval_cmd)
 

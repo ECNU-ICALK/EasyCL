@@ -53,7 +53,6 @@ resume_from_checkpoint: null
 use_abscl: true
 abscl_orthogonal_lambda: 0.1 # lambda_1
 abscl_shared_l2_lambda: 0.01 # lambda_2
-abscl_stats_path: saves/abscl_stats # Path to save/load ABSCL statistics (means, covariance)
 adapters_save_path: saves/adapters_abscl # Path to save adapters (shared and task-specific), {task_id} will be replaced
 # Note: ABSCL requires loading statistics and potentially adapter components from previous tasks.
 # Ensure abscl_stats_path points to the correct location containing previous task info. 
