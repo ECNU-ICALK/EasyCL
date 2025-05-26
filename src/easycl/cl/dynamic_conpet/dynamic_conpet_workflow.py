@@ -576,17 +576,6 @@ def run_sft_dynamic_conpet(
     AcceleratorState._reset_state()   # 清掉全局 state
     PartialState._reset_state()       # 同时清 partial state               # 0.26+ 公共 API
 
-    # Force TrainingArguments to re-initialize its distributed and accelerator states
-    if hasattr(training_args_task, '_distributed_state'):
-        training_args_task._distributed_state = None
-    if hasattr(training_args_task, '_accelerator_state'):
-        training_args_task._accelerator_state = None
-    # It's also good practice to do it for training_args_shared, though it might not be used to create a new Trainer afterwards.
-    if hasattr(training_args_shared, '_distributed_state'):
-        training_args_shared._distributed_state = None
-    if hasattr(training_args_shared, '_accelerator_state'):
-        training_args_shared._accelerator_state = None
-
     if 'dataset_classifier' in locals():
         del dataset_classifier
     gc.collect()
