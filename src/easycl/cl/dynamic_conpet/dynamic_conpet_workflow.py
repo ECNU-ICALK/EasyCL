@@ -604,7 +604,7 @@ def run_sft_dynamic_conpet(
     debugprint(f"任务特定适配器输出目录: {adapter_output_dir_task}")
 
     # Set task-specific adapter output directory
-    training_args_task = copy.deepcopy(training_args)  # Create new copy for task adapter
+    training_args_task = copy.deepcopy(training_args_shared)  # Create new copy for task adapter
     training_args_task.output_dir = adapter_output_dir_task
     training_args_task.overwrite_output_dir = True
     debugprint(f"为任务适配器设置的 training_args.output_dir: {training_args_task.output_dir}")
