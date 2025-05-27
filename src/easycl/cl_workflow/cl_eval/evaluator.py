@@ -56,96 +56,104 @@ class CLEvalEvaluator(BaseEvaluator):
             # 尝试从args字典中获取multi_adapter_dir
             if isinstance(args, dict) and "multi_adapter_dir" in args:
                 self.eval_args.multi_adapter_dir = args["multi_adapter_dir"]
-                print(f"从参数字典中获取multi_adapter_dir: {self.eval_args.multi_adapter_dir}")
+                logger.info(f"Fetched multi_adapter_dir from args dict: {self.eval_args.multi_adapter_dir}") # English log
             else:
                 # 设置默认值
                 self.eval_args.multi_adapter_dir = "./multi_adapter_config"
-                print(f"警告: 未找到multi_adapter_dir参数，使用默认值: {self.eval_args.multi_adapter_dir}")
+                logger.warning(f"multi_adapter_dir parameter not found, using default: {self.eval_args.multi_adapter_dir}") # English log
         
         # vLLM相关初始化
         self.use_vllm = getattr(self.eval_args, "cleval_use_vllm", False)
         
         # 确保多adapter模式下不使用vLLM
         if self.using_multi_adapter and self.use_vllm:
-            print("警告: 多adapter模式下不支持使用vLLM，已自动禁用vLLM")
+            logger.warning("Multi-adapter mode does not support vLLM. Disabling vLLM automatically.") # English log
             self.use_vllm = False
         
         if self.use_vllm:
             if not is_vllm_available():
-                print("vLLM不可用，回退到标准推理")
+                logger.warning("vLLM is not available, falling back to standard inference.") # English log
                 self.use_vllm = False
             else:
-                print("初始化vLLM推理引擎")
+                logger.info("Initializing vLLM inference engine.") # English log
                 self._init_vllm_engine()
-                print("vLLM推理引擎初始化完成")
+                logger.info("vLLM inference engine initialized successfully.") # English log
         
         # 在非多adapter模式或需要基础模型进行推理时加载模型
         if not self.using_multi_adapter:
-            # Check if cl-MoE evaluation is enabled for single adapter mode
+            model_loaded_specially = False # Flag to track if CLMoE or MoELoRA model was loaded
+
+            # Check if cl-MoE evaluation is enabled
             if getattr(self.eval_args, "use_clmoe_eval", False):
-                print("信息: 检测到启用 cl-MoE 评估 (单Adapter模式)")
-                if not self.model_args.adapter_name_or_path:
-                     raise ValueError("错误: 启用 cl-MoE 评估，但未提供 adapter_name_or_path")
-                # Ensure finetuning_type is 'lora' for cl-MoE
-                if self.finetuning_args.finetuning_type != 'lora':
-                     print("警告: 启用 cl-MoE 评估，但 finetuning_type 不是 'lora'，将强制设置为 'lora'")
-                     self.finetuning_args.finetuning_type = 'lora'
-                     # Ensure necessary cl-MoE args are present in finetuning_args if needed
-                     if not hasattr(self.cl_finetuning_args, 'expert_num'):
-                         # Attempt to fetch from args dict if available, else raise error or set default
-                         if isinstance(args, dict) and 'expert_num' in args:
-                              self.cl_finetuning_args.expert_num = args['expert_num']
-                              print(f"信息: 从参数字典中获取 expert_num: {self.cl_finetuning_args.expert_num}")
-                         else:
-                              # Default or raise error, depending on expected behavior
-                              self.cl_finetuning_args.expert_num = 2 # Example default
-                              print(f"警告: 未找到 expert_num 参数，cl-MoE 加载器可能需要它。使用默认值: {self.cl_finetuning_args.expert_num}")
-                         # Similarly for task_embedding_dim if needed by loader
+                if self.model_args.adapter_name_or_path:
+                    logger.info("Detected cl-MoE evaluation enabled (single Adapter mode) with adapter_name_or_path.") # English log
+                    # Ensure finetuning_type is 'lora' for cl-MoE
+                    if self.finetuning_args.finetuning_type != 'lora':
+                        logger.warning("cl-MoE evaluation enabled, but finetuning_type is not 'lora'. Forcing to 'lora'.") # English log
+                        self.finetuning_args.finetuning_type = 'lora'
+                    
+                    # Ensure necessary cl-MoE args are present in cl_finetuning_args if needed
+                    if not hasattr(self.cl_finetuning_args, 'expert_num'):
+                        # Attempt to fetch from args dict if available, else raise error or set default
+                        if isinstance(args, dict) and 'expert_num' in args: # 'args' is the __init__ parameter
+                             self.cl_finetuning_args.expert_num = args['expert_num']
+                             logger.info(f"Fetched expert_num from args dict for cl-MoE: {self.cl_finetuning_args.expert_num}") # English log
+                        else:
+                             # Default or raise error, depending on expected behavior
+                             self.cl_finetuning_args.expert_num = 2 # Example default
+                             logger.warning(f"expert_num parameter not found for cl-MoE, using default: {self.cl_finetuning_args.expert_num}") # English log
+                        # Similarly for task_embedding_dim if needed by loader
 
-                print(f"信息: 正在使用 load_clmoe_model 加载模型及 cl-MoE adapter: {self.model_args.adapter_name_or_path}")
-                self.model = load_clmoe_model( # Use cl-MoE loader
-                    tokenizer=self.tokenizer,
-                    model_args=self.model_args,
-                    finetuning_args=self.finetuning_args,
-                    cl_finetuning_args=self.cl_finetuning_args,
-                    is_trainable=False, # Evaluation mode
-                    add_valuehead=False # No value head needed for evaluation
-                )
-                print("信息: cl-MoE 模型加载完成")
-                self.current_adapter_path = self.model_args.adapter_name_or_path # Record the loaded adapter
+                    logger.info(f"Loading model with cl-MoE adapter using load_clmoe_model: {self.model_args.adapter_name_or_path}") # English log
+                    self.model = load_clmoe_model( # Use cl-MoE loader
+                        tokenizer=self.tokenizer,
+                        model_args=self.model_args,
+                        finetuning_args=self.finetuning_args,
+                        cl_finetuning_args=self.cl_finetuning_args,
+                        is_trainable=False, # Evaluation mode
+                        add_valuehead=False # No value head needed for evaluation
+                    )
+                    logger.info("cl-MoE model loaded successfully.") # English log
+                    self.current_adapter_path = self.model_args.adapter_name_or_path # Record the loaded adapter
+                    model_loaded_specially = True
+                else:
+                    logger.warning("cl-MoE evaluation is enabled, but adapter_name_or_path is not provided. Falling back to standard model loading.") # English log
 
-            # Check if MoE-LoRA evaluation is enabled (only if cl-MoE is not)
-            elif getattr(self.eval_args, "use_moelora_eval", False):
-                print("信息: 检测到启用MoE-LoRA评估 (单Adapter模式)")
-                # Directly use load_moelora_model
-                if not self.model_args.adapter_name_or_path:
-                     raise ValueError("错误: 启用MoE-LoRA评估，但未提供adapter_name_or_path")
-                # Ensure finetuning_type is 'lora' for MoE-LoRA
-                if self.finetuning_args.finetuning_type != 'lora':
-                     print("警告: 启用MoE-LoRA评估，但finetuning_type不是'lora'，将强制设置为'lora'")
-                     self.finetuning_args.finetuning_type = 'lora'
+            # Check if MoE-LoRA evaluation is enabled (only if cl-MoE was not loaded)
+            if not model_loaded_specially and getattr(self.eval_args, "use_moelora_eval", False):
+                if self.model_args.adapter_name_or_path:
+                    logger.info("Detected MoE-LoRA evaluation enabled (single Adapter mode) with adapter_name_or_path.") # English log
+                    # Ensure finetuning_type is 'lora' for MoE-LoRA
+                    if self.finetuning_args.finetuning_type != 'lora':
+                        logger.warning("MoE-LoRA evaluation enabled, but finetuning_type is not 'lora'. Forcing to 'lora'.") # English log
+                        self.finetuning_args.finetuning_type = 'lora'
                      
-                print(f"信息: 正在使用 load_moelora_model 加载模型及MoE-LoRA adapter: {self.model_args.adapter_name_or_path}")
-                self.model = load_moelora_model(
-                    tokenizer=self.tokenizer,
-                    model_args=self.model_args,
-                    finetuning_args=self.finetuning_args,
-                    cl_finetuning_args=self.cl_finetuning_args,
-                    is_trainable=False, # Evaluation mode
-                    add_valuehead=False # No value head needed for evaluation
-                )
-                print("信息: MoE-LoRA模型加载完成")
-                self.current_adapter_path = self.model_args.adapter_name_or_path # Record the loaded adapter
-            else:
-                # Standard single adapter mode (or base model loading if adapter path is None)
-                print("信息: 标准单Adapter/基础模型模式评估")
+                    logger.info(f"Loading model with MoE-LoRA adapter using load_moelora_model: {self.model_args.adapter_name_or_path}") # English log
+                    self.model = load_moelora_model(
+                        tokenizer=self.tokenizer,
+                        model_args=self.model_args,
+                        finetuning_args=self.finetuning_args,
+                        cl_finetuning_args=self.cl_finetuning_args,
+                        is_trainable=False, # Evaluation mode
+                        add_valuehead=False # No value head needed for evaluation
+                    )
+                    logger.info("MoE-LoRA model loaded successfully.") # English log
+                    self.current_adapter_path = self.model_args.adapter_name_or_path # Record the loaded adapter
+                    model_loaded_specially = True
+                else:
+                    logger.warning("MoE-LoRA evaluation is enabled, but adapter_name_or_path is not provided. Falling back to standard model loading.") # English log
+            
+            # Standard single adapter mode or base model loading (if not loaded specially or as fallback)
+            if not model_loaded_specially:
+                logger.info("Standard single Adapter / Base model evaluation mode.") # English log
                 # Load model with or without adapter based on initial model_args.adapter_name_or_path
                 self.model = load_model(self.tokenizer, self.model_args, self.finetuning_args)
                 self.current_adapter_path = self.initial_adapter_path # Use initial path here
         elif self.using_multi_adapter:
             # 对于多adapter模式，先加载基础模型，不加载adapter
             self.original_adapter_path = self.model_args.adapter_name_or_path
-            self.model_args.adapter_name_or_path = None
+            self.model_args.adapter_name_or_path = None # Ensure no adapter is loaded with base model initially
+            logger.info("Multi-adapter mode: Loading base model without adapters initially.") # English log
             self.model = load_model(self.tokenizer, self.model_args, self.finetuning_args)
             
             # 加载adapter配置
