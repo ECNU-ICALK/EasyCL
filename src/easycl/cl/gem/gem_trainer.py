@@ -87,7 +87,7 @@ class GEMSeq2SeqTrainer(CustomSeq2SeqTrainer):
         if not has_current_samples:
             logger.warning_once(f"[RANK {rank}] Received a batch with only memory samples. Skipping GEM gradient calculation for this batch.")
             
-            effective_loss = torch.tensor(0.0, device=model.device, requires_grad=True) # Default
+            effective_loss = torch.tensor(1e-9, device=model.device, requires_grad=True) # MODIFIED DEFAULT to small epsilon
 
             if has_memory_samples:
                 # Try to compute a real loss on memory samples then zero it out
@@ -111,26 +111,29 @@ class GEMSeq2SeqTrainer(CustomSeq2SeqTrainer):
                         loss_from_mem_samples = super().compute_loss(model, memory_inputs_for_dummy_pass, return_outputs=False)
 
                         # Multiply by 0.0. If loss_from_mem_samples requires grad, the result should too.
-                        effective_loss = loss_from_mem_samples * 0.0
-                        debugprint(f"[RANK {rank}] GEM compute_loss: Loss from memory samples (before zeroing): {loss_from_mem_samples.item()}. Effective loss for backward: {effective_loss.item()}. Requires grad: {effective_loss.requires_grad}")
+                        # MODIFIED: Ensure effective_loss is a small epsilon while retaining graph properties
+                        effective_loss_zero_contrib = loss_from_mem_samples * 0.0
+                        effective_loss = effective_loss_zero_contrib + torch.tensor(1e-9, device=effective_loss_zero_contrib.device, requires_grad=False)
+                        debugprint(f"[RANK {rank}] GEM compute_loss: Loss from memory samples (before zeroing attempt): {loss_from_mem_samples.item()}. Effective loss for backward: {effective_loss.item()}. Requires grad: {effective_loss.requires_grad}")
 
                         # Sanity check: ensure it still requires grad if original did and operation lost it
                         if loss_from_mem_samples.requires_grad and not effective_loss.requires_grad:
                             effective_loss = effective_loss.clone().detach().requires_grad_(True)
-                            debugprint(f"[RANK {rank}] GEM compute_loss: Re-enabled requires_grad for zeroed effective_loss.")
+                            debugprint(f"[RANK {rank}] GEM compute_loss: Re-enabled requires_grad for epsilon-adjusted effective_loss.")
                     
                     except Exception as e:
-                        logger.error(f"[RANK {rank}] Error during dummy forward pass on memory samples for zero-grad purpose: {e}. Defaulting to simple 0.0 tensor.")
-                        debugprint(f"[RANK {rank}] GEM compute_loss: Error in dummy forward pass: {e}. Using default 0.0 tensor.")
+                        logger.error(f"[RANK {rank}] Error during dummy forward pass on memory samples for zero-grad purpose: {e}. Defaulting to small epsilon tensor.")
+                        debugprint(f"[RANK {rank}] GEM compute_loss: Error in dummy forward pass: {e}. Using default small epsilon tensor.")
                         # Fallback to the original simple tensor if dummy pass fails
-                        effective_loss = torch.tensor(0.0, device=model.device, requires_grad=True)
+                        effective_loss = torch.tensor(1e-9, device=model.device, requires_grad=True) # MODIFIED
                 else:
-                    debugprint(f"[RANK {rank}] GEM compute_loss: Memory-only batch, but 'input_ids' missing/empty for dummy pass. Using default 0.0 tensor.")
-                    effective_loss = torch.tensor(0.0, device=model.device, requires_grad=True)
+                    debugprint(f"[RANK {rank}] GEM compute_loss: Memory-only batch, but 'input_ids' missing/empty for dummy pass. Using default small epsilon tensor.")
+                    effective_loss = torch.tensor(1e-9, device=model.device, requires_grad=True) # MODIFIED
             else:
                 # No current samples AND no memory samples (e.g., empty batch after filtering, or malformed initial batch)
-                debugprint(f"[RANK {rank}] GEM compute_loss: Batch has neither current nor memory samples. Using default 0.0 tensor.")
-                effective_loss = torch.tensor(0.0, device=model.device, requires_grad=True)
+                # effective_loss is already 1e-9 from the MODIFIED DEFAULT above.
+                debugprint(f"[RANK {rank}] GEM compute_loss: Batch has neither current nor memory samples. Using default small epsilon tensor (already set).")
+                # effective_loss = torch.tensor(1e-9, device=model.device, requires_grad=True) # This line is redundant due to modified default
 
             if return_outputs:
                 # For outputs, since we are skipping current task, there are no "current" outputs.
