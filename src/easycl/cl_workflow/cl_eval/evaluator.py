@@ -222,9 +222,9 @@ class CLEvalEvaluator(BaseEvaluator):
         # 设置采样参数
         self.sampling_params = SamplingParams(
             repetition_penalty=getattr(self.generating_args, "repetition_penalty", 1.0),
-            temperature=getattr(self.generating_args, "temperature", 0.0),
-            top_p=getattr(self.generating_args, "top_p", 1.0),
-            top_k=getattr(self.generating_args, "top_k", -1),
+            temperature=0.0,  # MMLU: temperature 0
+            top_p=1.0,  # MMLU: effectively greedy when temp is 0
+            top_k=-1,  # MMLU: disable top_k sampling for greedy
             max_tokens=self.generating_args.max_new_tokens,
             stop_token_ids=self.template.get_stop_token_ids(self.tokenizer),
             skip_special_tokens=False,
@@ -768,13 +768,13 @@ class CLEvalEvaluator(BaseEvaluator):
             # 使用 GeneratingArguments 配置生成参数
             generation_kwargs = {
                 "max_new_tokens": self.generating_args.max_new_tokens,
-                "num_beams": self.generating_args.num_beams,
-                "do_sample": self.generating_args.do_sample,
-                "temperature": self.generating_args.temperature,
-                "top_p": self.generating_args.top_p,
-                "top_k": self.generating_args.top_k,
-                "repetition_penalty": self.generating_args.repetition_penalty,
-                "length_penalty": self.generating_args.length_penalty,
+                "num_beams": 1, # MMLU: greedy search
+                "do_sample": False, # MMLU: no sampling
+                "temperature": 0.0, # MMLU: temperature 0
+                "top_p": None, # MMLU: not applicable with do_sample=False
+                "top_k": None, # MMLU: not applicable with do_sample=False
+                "repetition_penalty": self.generating_args.repetition_penalty, # Keep or set to 1.0 if MMLU specifies
+                "length_penalty": self.generating_args.length_penalty, # Keep or set to 1.0 if MMLU specifies
                 # Handle potential absence of early_stopping in older GeneratingArguments
                 "early_stopping": getattr(self.generating_args, "early_stopping", False), 
                 # Handle potential absence of no_repeat_ngram_size
