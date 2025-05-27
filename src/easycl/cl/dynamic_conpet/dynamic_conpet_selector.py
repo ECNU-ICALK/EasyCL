@@ -121,10 +121,25 @@ def select_adapter_dynamic_conpet(
         dataset_path: Test dataset path
         multi_adapter_dir: Multi-adapter directory path
         task_name: Current evaluation task name
-        device: Computation device
+        device: Computation device (should be training_args.device for rank 0)
         batch_size: Batch size
     """
     debugprint("进入 select_adapter_dynamic_conpet 函数")
+
+    # 仅在主进程 (rank 0) 或单进程 (local_rank 为 -1 或 0) 上执行
+    # training_args.local_rank (来自于 eval_args) > 0 表示当前不是主进程
+    if training_args.local_rank > 0:
+        logger.info(f"Dynamic ConPet Selector: Skipping adapter selection on rank {training_args.local_rank} (not main process).")
+        return
+
+    # 使用传入的 device 参数作为当前操作设备
+    # 这个 device 参数通常是 training_args.device (例如 cuda:0 for rank 0)
+    current_device = device
+    logger.info(f"Dynamic ConPet Selector: Running on device: {current_device} (local_rank: {training_args.local_rank})")
+    if current_device is None: # 如果没有明确提供device，则基于可用性选择，但这通常应由调用者（如main）基于training_args.device设置
+        current_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        logger.warning(f"Dynamic ConPet Selector: Device was None, fallback to {current_device}. Ensure training_args.device is correctly passed.")
+
     # Ensure output directory exists
     os.makedirs(multi_adapter_dir, exist_ok=True)
     output_config_path = os.path.join(multi_adapter_dir, "multiadapter_selected_config.json")
@@ -164,7 +179,7 @@ def select_adapter_dynamic_conpet(
     debugprint(f"使用的设备: {device}")
     debugprint("加载模型")
     model = load_model(tokenizer, model_args, finetuning_args_base)
-    model.to(device)
+    model.to(current_device) # 确保模型在目标设备上
     model.eval()
     debugprint("模型加载完成并设置为评估模式")
     
@@ -179,7 +194,7 @@ def select_adapter_dynamic_conpet(
     if dataset_classifier is None:
         raise ValueError(f"Failed to load dataset classifier: {classifier_path}")
     
-    dataset_classifier.to(device)
+    dataset_classifier.to(current_device) # 确保分类器在目标设备上
     dataset_classifier.eval()
     debugprint("数据集分类器加载完成并设置为评估模式")
     
@@ -286,7 +301,7 @@ def select_adapter_dynamic_conpet(
         debugprint(f"批次中的样本原始索引: {indices}")
         
         # Move batch to device
-        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+        batch = {k: v.to(current_device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
         
         # Forward pass to get hidden states
         with torch.no_grad():
@@ -406,6 +421,7 @@ def main():
         dataset_path=args.dataset_path,
         multi_adapter_dir=eval_args.multi_adapter_dir,
         task_name=eval_args.task,
+        device=eval_args.device, # 显式传递 eval_args.device
         batch_size=args.batch_size
     )
     debugprint("Dynamic ConPet Selector 主程序结束")
