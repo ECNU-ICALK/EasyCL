@@ -135,6 +135,38 @@ class GEMSeq2SeqTrainer(CustomSeq2SeqTrainer):
                 debugprint(f"[RANK {rank}] GEM compute_loss: Batch has neither current nor memory samples. Using default small epsilon tensor (already set).")
                 # effective_loss = torch.tensor(1e-9, device=model.device, requires_grad=True) # This line is redundant due to modified default
 
+            # if this is a memory-only batch (no current_samples),
+            # the effective_loss is designed to produce zero gradients for model parameters.
+            # However, DeepSpeed's BF16Optimizer asserts all_groups_norm > 0 if grad clipping is on.
+            # To prevent this, we add a tiny, negligible loss component tied to one parameter,
+            # ensuring at least one parameter has a non-zero gradient.
+            # This applies if gradient clipping seems to be active (max_grad_norm > 0).
+            # self.args should be accessible here as it's part of the Trainer class.
+            if self.args.max_grad_norm > 0 and hasattr(model, "parameters"):
+                param_perturbed = False
+                for param in model.parameters(): # Iterate to find a parameter that requires grad
+                    if param.requires_grad:
+                        if effective_loss.requires_grad: # Ensure base effective_loss is valid
+                            perturbation_coeff = 1e-12 # Use a very small coefficient
+                            # Add a tiny loss component: param.sum() * very_small_number
+                            # This makes param.grad slightly non-zero.
+                            # .sum() handles various param shapes and makes it a scalar loss component.
+                            try:
+                                effective_loss = effective_loss + (param.sum() * perturbation_coeff)
+                                debugprint(f"[RANK {get_rank()}] GEM compute_loss: Added tiny perturbation (coeff: {perturbation_coeff}) to effective_loss using one param to ensure non-zero grad norm for BF16 optimizer.")
+                                param_perturbed = True
+                                break # Perturb only one parameter
+                            except RuntimeError as e:
+                                # This might happen if param.sum() is not compatible with effective_loss device/dtype
+                                logger.warning_once(f"[RANK {get_rank()}] GEM compute_loss: Error during perturbation: {e}. Skipping.")
+                                break 
+                        else:
+                            logger.warning_once(f"[RANK {get_rank()}] GEM compute_loss: effective_loss does not require_grad before perturbation attempt in memory-only batch. Skipping perturbation.")
+                            break # Skip if base effective_loss is faulty
+                
+                if not param_perturbed and any(p.requires_grad for p in model.parameters()):
+                    logger.warning_once(f"[RANK {get_rank()}] GEM compute_loss: Could not apply perturbation in memory-only batch (no suitable param or effective_loss issue), grad norm might still be zero.")
+
             if return_outputs:
                 # For outputs, since we are skipping current task, there are no "current" outputs.
                 debugprint(f"[RANK {rank}] GEM compute_loss: Memory-only batch, returning effective_loss: {effective_loss.item()} and None outputs")
