@@ -35,6 +35,17 @@ class CLEvalEvaluator(BaseEvaluator):
     def __init__(self, args: Optional[Dict[str, Any]] = None) -> None:
         """初始化持续学习评估器"""
         self.model_args, self.data_args, self.eval_args, self.finetuning_args, self.cl_finetuning_args = get_cl_eval_args(args)
+
+        # Convert string "None" or list ["None"] for adapter_name_or_path to Python None
+        if isinstance(self.model_args.adapter_name_or_path, str) and self.model_args.adapter_name_or_path == "None":
+            self.model_args.adapter_name_or_path = None
+            logger.info_rank0("Converted model_args.adapter_name_or_path from string 'None' to Python None.") # English log
+        elif isinstance(self.model_args.adapter_name_or_path, list) and \
+             len(self.model_args.adapter_name_or_path) == 1 and \
+             self.model_args.adapter_name_or_path[0] == "None":
+            self.model_args.adapter_name_or_path = None
+            logger.info_rank0("Converted model_args.adapter_name_or_path from list ['None'] to Python None.") # English log
+
         # Parse GeneratingArguments separately from the input args dict
         parser = HfArgumentParser(GeneratingArguments)
         # parse_dict returns only the dataclass instance when parsing a single type

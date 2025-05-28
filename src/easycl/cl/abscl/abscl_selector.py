@@ -1,4 +1,3 @@
-
 import os
 import json
 import torch
@@ -149,6 +148,20 @@ def select_adapter(
     # debugprint(f"Entering select_adapter function")
     # debugprint(f"Incoming finetuning_args: {finetuning_args}")
 
+    # 仅在主进程 (rank 0) 或单进程 (local_rank 为 -1 或 0) 上执行
+    local_rank = 0
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        local_rank = torch.distributed.get_rank()
+    
+    if local_rank > 0:
+        logger.info(f"ABSCL Selector: Skipping adapter selection on rank {local_rank} (not main process).")
+        return
+
+    # 使用传入的 device 参数作为当前操作设备
+    # 这个 device 参数通常是 training_args.device
+    current_device = device
+    logger.info(f"ABSCL Selector: Running on device: {current_device} (local_rank: {local_rank})")
+
     # 确保输出目录存在
     os.makedirs(multi_adapter_dir, exist_ok=True)
     output_config_path = os.path.join(multi_adapter_dir, "multiadapter_selected_config.json")
@@ -203,9 +216,9 @@ def select_adapter(
     tokenizer = tokenizer_module["tokenizer"]
     
     # 加载基础模型
-    device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
+    # device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")) # 旧的设备确定逻辑
     model = load_model(tokenizer, model_args, finetuning_args_base)
-    model.to(device)
+    model.to(current_device) # 确保模型在目标设备上
     model.eval()
     
     # 3. 准备特征提取器
@@ -215,8 +228,8 @@ def select_adapter(
         output_dir=multi_adapter_dir,
         per_device_eval_batch_size=batch_size
     )
-    dummy_trainer = Trainer(
-        model=model,
+    dummy_trainer = Trainer( # Trainer 内部可能会处理设备，但我们确保 extractor 使用 current_device
+        model=model, # model 已经 .to(current_device)
         args=dummy_training_args
     )
     
@@ -226,7 +239,7 @@ def select_adapter(
         trainer=dummy_trainer,
         stats_path=stats_path,
         task_id="selector_temp",
-        device=device
+        device=current_device # 确保提取器使用正确的设备
     )
     
     # 4. 扫描可用的Adapter
@@ -268,18 +281,18 @@ def select_adapter(
     )
     
     # 移动协方差逆矩阵到正确设备
-    cov_inv = cov_inv.to(device)
+    cov_inv = cov_inv.to(current_device)
     # 将任务均值移到正确设备
-    task_means = {k: v.to(device) for k, v in task_means.items()}
+    task_means = {k: v.to(current_device) for k, v in task_means.items()}
     
     sample_idx = 0
     for batch in tqdm(dataloader, desc="Processing sample batches", disable=False):
         # 将batch移至设备
-        batch = {k: v.to(device) for k, v in batch.items()}
+        batch = {k: v.to(current_device) for k, v in batch.items()}
         
         # 提取特征
         with torch.no_grad():
-            hidden_states = extractor._forward_and_get_hidden_states(batch)
+            hidden_states = extractor._forward_and_get_hidden_states(batch) # extractor 已配置为 current_device
             
             if hidden_states is None:
                 logger.warning(f"Batch {sample_idx//batch_size} could not extract features, using default adapter")
@@ -297,8 +310,8 @@ def select_adapter(
                 continue
             
             # 确保hidden_states在正确设备上
-            if hidden_states.device != device:
-                hidden_states = hidden_states.to(device)
+            if hidden_states.device != current_device:
+                hidden_states = hidden_states.to(current_device)
                 
             # 提取每个样本的特征
             if "attention_mask" in batch:
@@ -367,7 +380,8 @@ def select_adapter(
     # 释放资源
     del model
     del extractor
-    torch.cuda.empty_cache()
+    if torch.cuda.is_available(): # 只有CUDA可用时才执行empty_cache
+        torch.cuda.empty_cache()
     # debugprint("select_adapter function finished")
 
 def main():
@@ -409,6 +423,7 @@ def main():
         dataset_path=args.dataset_path,
         multi_adapter_dir=eval_args.multi_adapter_dir,
         task_name=eval_args.task,
+        device=eval_args.device, # 显式传递 eval_args.device
         batch_size=args.batch_size
     )
     

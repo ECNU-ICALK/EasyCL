@@ -127,15 +127,18 @@ def select_adapter_dynamic_conpet(
     debugprint("进入 select_adapter_dynamic_conpet 函数")
 
     # 仅在主进程 (rank 0) 或单进程 (local_rank 为 -1 或 0) 上执行
-    # training_args.local_rank (来自于 eval_args) > 0 表示当前不是主进程
-    if training_args.local_rank > 0:
-        logger.info(f"Dynamic ConPet Selector: Skipping adapter selection on rank {training_args.local_rank} (not main process).")
+    local_rank = 0
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        local_rank = torch.distributed.get_rank()
+
+    if local_rank > 0:
+        logger.info(f"Dynamic ConPet Selector: Skipping adapter selection on rank {local_rank} (not main process).")
         return
 
     # 使用传入的 device 参数作为当前操作设备
     # 这个 device 参数通常是 training_args.device (例如 cuda:0 for rank 0)
     current_device = device
-    logger.info(f"Dynamic ConPet Selector: Running on device: {current_device} (local_rank: {training_args.local_rank})")
+    logger.info(f"Dynamic ConPet Selector: Running on device: {current_device} (local_rank: {local_rank})")
     if current_device is None: # 如果没有明确提供device，则基于可用性选择，但这通常应由调用者（如main）基于training_args.device设置
         current_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         logger.warning(f"Dynamic ConPet Selector: Device was None, fallback to {current_device}. Ensure training_args.device is correctly passed.")
