@@ -183,6 +183,24 @@ class CLCommandGenerator:
         # Get CL method requirements and mappings from loaded config
         cl_method = self.train_kwargs.get("cl_method")
 
+        # Special handling for O-LoRA method
+        if cl_method == "olora":
+            if not is_first_task:
+                # For O-LoRA, use the merged model from previous task as base model
+                prev_task_dir_name = f"task_{task_id-1}_{self.tasks[task_id-1]}"
+                prev_task_output_dir = os.path.join(base_dir, prev_task_dir_name)
+                prev_merged_model_dir = os.path.join(prev_task_output_dir, "merged_model")
+                
+                # Set model_name_or_path to previous merged model
+                managed_args["model_name_or_path"] = prev_merged_model_dir
+                logger.info_rank0(f"Task {task_id}: O-LoRA method detected. Setting model_name_or_path={prev_merged_model_dir}")
+                
+                # Do NOT set adapter_name_or_path for O-LoRA
+                # O-LoRA starts fresh from the merged base model
+                
+            # Return early for O-LoRA to avoid standard adapter logic
+            return managed_args
+
         # 如果没有指定cl_method且不是第一个任务，自动设置adapter_name_or_path
         if not cl_method and not is_first_task:
             # 获取前一个任务的输出目录
@@ -500,6 +518,43 @@ class CLCommandGenerator:
                 args.pop(key)
 
         return f"easycl-cli cl_eval {self._dict_to_args(args)}"
+
+    def generate_merge_command(self, task_id: int, task: str, task_output_dir: str) -> str:
+        """为O-LoRA方法生成模型合并命令
+        
+        Args:
+            task_id: 任务ID
+            task: 任务名称
+            task_output_dir: 当前任务的输出目录
+            
+        Returns:
+            str: 模型合并命令
+        """
+        # Get base model path and template from train_kwargs
+        base_model_path = self.train_kwargs.get("model_name_or_path")
+        template = self.train_kwargs.get("template", "")
+        
+        # For subsequent tasks, use the merged model from previous task as base
+        if task_id > 0:
+            prev_task_dir_name = f"task_{task_id-1}_{self.tasks[task_id-1]}"
+            prev_task_output_dir = os.path.join(self.train_kwargs["output_dir"], prev_task_dir_name)
+            base_model_path = os.path.join(prev_task_output_dir, "merged_model")
+        
+        # Merged model will be saved in current task output directory
+        export_dir = os.path.join(task_output_dir, "merged_model")
+        
+        # Construct merge command
+        merge_args = {
+            "model_name_or_path": base_model_path,
+            "adapter_name_or_path": task_output_dir,
+            "template": template,
+            "finetuning_type": "lora",
+            "export_dir": export_dir
+        }
+        
+        # Convert to command string
+        args_str = self._dict_to_args(merge_args)
+        return f"llamafactory-cli export {args_str}"
 
 class CLWorkflow:
     """持续学习工作流"""
@@ -855,11 +910,20 @@ class CLWorkflow:
 
         # Generate train commands if needed
         if self.workflow_args.mode != "eval_only":
+            cl_method = self.train_kwargs.get("cl_method")
+            is_olora = (cl_method == "olora")
+            
             for i, task in enumerate(self.tasks):
                 # Update command generator's state if necessary (e.g., if it holds task-specific state)
                 # Currently, command_generator seems stateless w.r.t tasks besides reading self.tasks
                 train_cmd = self.command_generator.generate_train_command(i, task)
                 train_commands.append(train_cmd)
+                
+                # For O-LoRA method, add merge command after each task (except if only one task)
+                if is_olora and len(self.tasks) > 1:
+                    task_output_dir = os.path.join(self.train_kwargs.get("output_dir", "outputs"), f"task_{i}_{task}")
+                    merge_cmd = self.command_generator.generate_merge_command(i, task, task_output_dir)
+                    train_commands.append(merge_cmd)
 
         # Generate eval commands if needed
         if self.workflow_args.mode != "train_only":
@@ -871,6 +935,10 @@ class CLWorkflow:
                 bool(self.train_kwargs.get("adapter_name_or_path")) # If adapter is explicitly given
             )
             base_model_path_for_eval = self.train_kwargs.get("model_name_or_path")
+
+            # Special handling for O-LoRA evaluation
+            cl_method = self.train_kwargs.get("cl_method")
+            is_olora = (cl_method == "olora")
 
             # Evaluate base model if required by workflow mode
             if self.workflow_args.mode in ["full_workflow", "train_then_eval"]: # Evaluate base/initial state before task 0 training
@@ -926,18 +994,25 @@ class CLWorkflow:
             # Evaluate after each task if required (not eval_only mode)
             if self.workflow_args.mode != "eval_only":
                 for i, task in enumerate(self.tasks):
-                    # Output dir for the task i model/adapter
-                    task_output_dir = os.path.join(self.train_kwargs.get("output_dir", "outputs"), f"task_{i}_{task}")
-
-                    # Determine if the output of this task is LoRA adapters or full model
-                    # Assume LoRA if LoRA was potentially used during training phase
-                    is_task_output_lora = is_lora_potentially_used
+                    # For O-LoRA, use merged model path instead of adapter path
+                    if is_olora:
+                        # O-LoRA uses merged models for evaluation
+                        task_output_dir = os.path.join(self.train_kwargs.get("output_dir", "outputs"), f"task_{i}_{task}", "merged_model")
+                        is_task_output_lora = False  # Merged model is a full model, not LoRA
+                        base_model_path_for_task_eval = None  # No separate base model needed
+                    else:
+                        # Standard path for other methods
+                        task_output_dir = os.path.join(self.train_kwargs.get("output_dir", "outputs"), f"task_{i}_{task}")
+                        # Determine if the output of this task is LoRA adapters or full model
+                        # Assume LoRA if LoRA was potentially used during training phase
+                        is_task_output_lora = is_lora_potentially_used
+                        base_model_path_for_task_eval = base_model_path_for_eval if is_task_output_lora else None
 
                     eval_cmd = self.command_generator.generate_eval_command(
                         task_output_dir=task_output_dir, # Path to the adapter (if LoRA) or fine-tuned model
                         task_id=i,
                         is_lora=is_task_output_lora,
-                        base_model_path=base_model_path_for_eval if is_task_output_lora else None
+                        base_model_path=base_model_path_for_task_eval
                     )
                     eval_commands.append(eval_cmd)
             elif self.workflow_args.mode == "eval_only":
@@ -971,8 +1046,24 @@ class CLWorkflow:
 
         if train_commands:
             print("\n--- Training Commands Preview ---")
-            for i, cmd in enumerate(train_commands, 1):
-                print(f"Task {i-1}: {cmd}\n")
+            cl_method = self.train_kwargs.get("cl_method")
+            is_olora = (cl_method == "olora")
+            
+            if is_olora and len(self.tasks) > 1:
+                # For O-LoRA, show interleaved training and merge commands
+                task_count = 0
+                for i, cmd in enumerate(train_commands):
+                    if "easycl-cli cl_train" in cmd:
+                        task_count += 1
+                        print(f"Task {task_count-1} Training: {cmd}\n")
+                    elif "llamafactory-cli export" in cmd:
+                        print(f"Task {task_count-1} Model Merge: {cmd}\n")
+                    else:
+                        print(f"Command {i+1}: {cmd}\n")
+            else:
+                # Standard preview for non-O-LoRA methods
+                for i, cmd in enumerate(train_commands, 1):
+                    print(f"Task {i-1}: {cmd}\n")
 
         if eval_commands:
             print("\n--- Evaluation Commands Preview ---")
@@ -1037,8 +1128,28 @@ class CLWorkflow:
         """运行训练模式"""
         train_commands, _ = self._get_commands()
         if train_commands:
-            for i, cmd in enumerate(train_commands):
-                self._run_command(cmd, f"Training Task {i+1}/{len(self.tasks)}")
+            cl_method = self.train_kwargs.get("cl_method")
+            is_olora = (cl_method == "olora")
+            
+            if is_olora and len(self.tasks) > 1:
+                # For O-LoRA, train_commands contains interleaved training and merge commands
+                # Pattern: [train_task0, merge_task0, train_task1, merge_task1, ...]
+                task_count = 0
+                for i, cmd in enumerate(train_commands):
+                    if "easycl-cli cl_train" in cmd:
+                        # This is a training command
+                        task_count += 1
+                        self._run_command(cmd, f"Training Task {task_count}/{len(self.tasks)}")
+                    elif "llamafactory-cli export" in cmd:
+                        # This is a merge command
+                        self._run_command(cmd, f"Merging Task {task_count} Model")
+                    else:
+                        # Fallback for unexpected command types
+                        self._run_command(cmd, f"Command {i+1}/{len(train_commands)}")
+            else:
+                # Standard execution for non-O-LoRA methods
+                for i, cmd in enumerate(train_commands):
+                    self._run_command(cmd, f"Training Task {i+1}/{len(self.tasks)}")
         else:
             logger.info_rank0("No training commands generated for train_only mode.")
 
@@ -1063,8 +1174,28 @@ class CLWorkflow:
 
         # Execute training first
         if train_commands:
-            for i, cmd in enumerate(train_commands):
-                self._run_command(cmd, f"Training Task {i+1}/{len(self.tasks)}")
+            cl_method = self.train_kwargs.get("cl_method")
+            is_olora = (cl_method == "olora")
+            
+            if is_olora and len(self.tasks) > 1:
+                # For O-LoRA, train_commands contains interleaved training and merge commands
+                # Pattern: [train_task0, merge_task0, train_task1, merge_task1, ...]
+                task_count = 0
+                for i, cmd in enumerate(train_commands):
+                    if "easycl-cli cl_train" in cmd:
+                        # This is a training command
+                        task_count += 1
+                        self._run_command(cmd, f"Training Task {task_count}/{len(self.tasks)}")
+                    elif "llamafactory-cli export" in cmd:
+                        # This is a merge command
+                        self._run_command(cmd, f"Merging Task {task_count} Model")
+                    else:
+                        # Fallback for unexpected command types
+                        self._run_command(cmd, f"Command {i+1}/{len(train_commands)}")
+            else:
+                # Standard execution for non-O-LoRA methods
+                for i, cmd in enumerate(train_commands):
+                    self._run_command(cmd, f"Training Task {i+1}/{len(self.tasks)}")
         else:
             logger.info_rank0("No training commands generated for train_then_eval mode.")
 
