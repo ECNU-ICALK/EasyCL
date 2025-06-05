@@ -183,6 +183,23 @@ class CLCommandGenerator:
         # Get CL method requirements and mappings from loaded config
         cl_method = self.train_kwargs.get("cl_method")
 
+        # --- Task ID Management (Execute First for All Methods) ---
+        if cl_method:
+            method_requirements = self.config.get("cl_method_requirements", {}).get(cl_method, {})
+            if method_requirements.get("needs_task_id"):
+                managed_args["current_task_id"] = task
+                if not is_first_task:
+                    prev_task_id_param = "prev_task_id" # Default param name
+                    # Check if there's a specific mapping for prev_task_id (unlikely but possible)
+                    method_specific_mappings = self.config.get("task_output_mapping", {}).get(cl_method, {}).get("params", [])
+                    mapping_dict = {m["param_name"]: m for m in method_specific_mappings} # For quick lookup
+                    if prev_task_id_param in mapping_dict:
+                         # Use mapped param name if specified, although source is always the previous task ID
+                         # This part might be overly complex unless a method uses a different name like 'previous_task_identifier'
+                         pass # Stick to 'prev_task_id' for simplicity unless explicitly needed otherwise
+                    managed_args[prev_task_id_param] = self.tasks[task_id - 1]
+                    logger.info_rank0(f"Task {task_id} ({task}): Setting {prev_task_id_param}={managed_args[prev_task_id_param]} for method {cl_method.upper()}")
+
         # Special handling for O-LoRA method
         if cl_method == "olora":
             if not is_first_task:
@@ -197,9 +214,9 @@ class CLCommandGenerator:
                 
                 # Do NOT set adapter_name_or_path for O-LoRA
                 # O-LoRA starts fresh from the merged base model
-                
-            # Return early for O-LoRA to avoid standard adapter logic
-            return managed_args
+            
+            # Continue with remaining parameter management for O-LoRA
+            # Don't return early anymore
 
         # 如果没有指定cl_method且不是第一个任务，自动设置adapter_name_or_path
         if not cl_method and not is_first_task:
@@ -215,7 +232,7 @@ class CLCommandGenerator:
             return managed_args
 
         if not cl_method:
-            # If no CL method specified, only manage output_dir
+            # If no CL method specified, only manage output_dir and task_id (if needed)
             return managed_args
 
         method_requirements = self.config.get("cl_method_requirements", {}).get(cl_method, {})
@@ -226,19 +243,6 @@ class CLCommandGenerator:
         default_mappings = self.config.get("default_param_mappings", {})
         method_specific_mappings = self.config.get("task_output_mapping", {}).get(cl_method, {}).get("params", [])
         mapping_dict = {m["param_name"]: m for m in method_specific_mappings} # For quick lookup
-
-        # --- Task ID Management ---
-        if method_requirements.get("needs_task_id"):
-            managed_args["current_task_id"] = task
-            if not is_first_task:
-                prev_task_id_param = "prev_task_id" # Default param name
-                # Check if there's a specific mapping for prev_task_id (unlikely but possible)
-                if prev_task_id_param in mapping_dict:
-                     # Use mapped param name if specified, although source is always the previous task ID
-                     # This part might be overly complex unless a method uses a different name like 'previous_task_identifier'
-                     pass # Stick to 'prev_task_id' for simplicity unless explicitly needed otherwise
-                managed_args[prev_task_id_param] = self.tasks[task_id - 1]
-                logger.info_rank0(f"Task {task_id} ({task}): Setting {prev_task_id_param}={managed_args[prev_task_id_param]} for method {cl_method.upper()}")
 
         # --- First Task Special Params ---
         if is_first_task:
@@ -284,27 +288,31 @@ class CLCommandGenerator:
                 else:
                     logger.warning(f"Task {task_id}: Cannot map previous model/adapter via specific mapping for method {cl_method.upper()}. Unexpected related_to: {related_to}")
             else: # No specific mapping found in task_output_mapping for this method
-                managed_args["previous_task_model"] = prev_task_output_dir
-                logger.info_rank0(f"Task {task_id}: Setting previous_task_model={prev_task_output_dir} for method {cl_method.upper()} as default path reference.")
+                # Skip setting previous_task_model for O-LoRA as it uses model_name_or_path differently
+                if cl_method != "olora":
+                    managed_args["previous_task_model"] = prev_task_output_dir
+                    logger.info_rank0(f"Task {task_id}: Setting previous_task_model={prev_task_output_dir} for method {cl_method.upper()} as default path reference.")
 
         # --- Handle adapter_name_or_path independently ---
         # 添加单独处理 adapter_name_or_path 的逻辑，基于 needs_adapter_name_or_path 标志
         if method_requirements.get("needs_adapter_name_or_path", False) and not is_first_task:
-            # 检查是否有方法特定的adapter_name_or_path映射
-            adapter_mapping = None
-            for mapping in method_specific_mappings:
-                if mapping["param_name"] == "adapter_name_or_path" and mapping.get("related_to") == "output_dir":
-                    adapter_mapping = mapping
-                    break
+            # Skip adapter_name_or_path for O-LoRA as it starts fresh from merged base model
+            if cl_method != "olora":
+                # 检查是否有方法特定的adapter_name_or_path映射
+                adapter_mapping = None
+                for mapping in method_specific_mappings:
+                    if mapping["param_name"] == "adapter_name_or_path" and mapping.get("related_to") == "output_dir":
+                        adapter_mapping = mapping
+                        break
 
-            if adapter_mapping:
-                # 使用方法特定的映射
-                managed_args["adapter_name_or_path"] = prev_task_output_dir
-                logger.info_rank0(f"Task {task_id}: Setting adapter_name_or_path={prev_task_output_dir} for method {cl_method.upper()} based on method-specific mapping.")
-            else:
-                # 没有找到方法特定的映射，但needs_adapter_name_or_path为True，使用默认映射
-                managed_args["adapter_name_or_path"] = prev_task_output_dir
-                logger.info_rank0(f"Task {task_id}: Setting adapter_name_or_path={prev_task_output_dir} for method {cl_method.upper()} based on needs_adapter_name_or_path=True.")
+                if adapter_mapping:
+                    # 使用方法特定的映射
+                    managed_args["adapter_name_or_path"] = prev_task_output_dir
+                    logger.info_rank0(f"Task {task_id}: Setting adapter_name_or_path={prev_task_output_dir} for method {cl_method.upper()} based on method-specific mapping.")
+                else:
+                    # 没有找到方法特定的映射，但needs_adapter_name_or_path为True，使用默认映射
+                    managed_args["adapter_name_or_path"] = prev_task_output_dir
+                    logger.info_rank0(f"Task {task_id}: Setting adapter_name_or_path={prev_task_output_dir} for method {cl_method.upper()} based on needs_adapter_name_or_path=True.")
 
         # --- Previous Data Mapping ---
         if method_requirements.get("needs_prev_data"):

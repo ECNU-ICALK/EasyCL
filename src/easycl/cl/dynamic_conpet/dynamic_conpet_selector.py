@@ -107,7 +107,7 @@ def select_adapter_dynamic_conpet(
     dataset_path: str,
     multi_adapter_dir: str,
     task_name: str,
-    device: Optional[torch.device] = None,
+    device: Optional[Union[str, torch.device]] = None, # Allow str for device
     batch_size: int = 16
 ) -> None:
     """
@@ -135,13 +135,27 @@ def select_adapter_dynamic_conpet(
         logger.info(f"Dynamic ConPet Selector: Skipping adapter selection on rank {local_rank} (not main process).")
         return
 
-    # 使用传入的 device 参数作为当前操作设备
-    # 这个 device 参数通常是 training_args.device (例如 cuda:0 for rank 0)
-    current_device = device
-    logger.info(f"Dynamic ConPet Selector: Running on device: {current_device} (local_rank: {local_rank})")
-    if current_device is None: # 如果没有明确提供device，则基于可用性选择，但这通常应由调用者（如main）基于training_args.device设置
-        current_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        logger.warning(f"Dynamic ConPet Selector: Device was None, fallback to {current_device}. Ensure training_args.device is correctly passed.")
+    # Determine current_device for rank 0. 'device' argument is training_args.device.
+    current_device_obj: Optional[torch.device] = None
+    if device is None:
+        # This is an unexpected state if called for rank 0, as training_args.device should be set.
+        # Defaulting to cuda:0 or cpu if truly None.
+        determined_device_str = "cuda:0" if torch.cuda.is_available() else "cpu"
+        logger.error(
+            f"Dynamic ConPet Selector: 'device' argument (training_args.device) is None for rank {local_rank}. "
+            f"This is a configuration issue. Attempting to use {determined_device_str} as a fallback."
+        )
+        current_device_obj = torch.device(determined_device_str)
+    elif isinstance(device, str):
+        current_device_obj = torch.device(device)
+    elif isinstance(device, torch.device):
+        current_device_obj = device
+    else:
+        # Should not happen with TrainingArguments.device
+        logger.error(f"Dynamic ConPet Selector: Unexpected type for 'device' argument: {type(device)}. Defaulting to cpu.")
+        current_device_obj = torch.device("cpu")
+
+    logger.info(f"Dynamic ConPet Selector: Using device: {current_device_obj} for local_rank: {local_rank}")
 
     # Ensure output directory exists
     os.makedirs(multi_adapter_dir, exist_ok=True)
@@ -169,22 +183,28 @@ def select_adapter_dynamic_conpet(
     
     # logger.info(f"Loading base model and shared adapter: {shared_adapter_path}")
     debugprint(f"加载基础模型和共享适配器: {shared_adapter_path}")
+
+    # Prepare model_args for loading model onto the specific current_device
+    model_args_for_load = copy.deepcopy(model_args)
+    model_args_for_load.hf_device_map = str(current_device_obj)
+    logger.info(f"Dynamic ConPet Selector: Prepared model_args with hf_device_map='{model_args_for_load.hf_device_map}'")
+
     from llamafactory.model import load_model, load_tokenizer
     
     # Load tokenizer
     debugprint("加载 tokenizer")
-    tokenizer_module = load_tokenizer(model_args)
+    tokenizer_module = load_tokenizer(model_args_for_load)
     tokenizer = tokenizer_module["tokenizer"]
     
     # Load base model and shared adapter
-    if device is None:
-        device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    debugprint(f"使用的设备: {device}")
+    # No longer need to check device here, current_device_obj is set
+    debugprint(f"使用的设备: {current_device_obj}")
     debugprint("加载模型")
-    model = load_model(tokenizer, model_args, finetuning_args_base)
-    model.to(current_device) # 确保模型在目标设备上
+    model = load_model(tokenizer, model_args_for_load, finetuning_args_base)
+    model.to(current_device_obj) # 确保模型在目标设备上
     model.eval()
     debugprint("模型加载完成并设置为评估模式")
+    logger.info(f"Dynamic ConPet Selector: Model loaded on device: {model.device}")
     
     # 3. Load classifier
     # logger.info(f"Loading dataset classifier: {classifier_path}")
@@ -197,9 +217,10 @@ def select_adapter_dynamic_conpet(
     if dataset_classifier is None:
         raise ValueError(f"Failed to load dataset classifier: {classifier_path}")
     
-    dataset_classifier.to(current_device) # 确保分类器在目标设备上
+    dataset_classifier.to(current_device_obj) # 确保分类器在目标设备上
     dataset_classifier.eval()
     debugprint("数据集分类器加载完成并设置为评估模式")
+    logger.info(f"Dynamic ConPet Selector: Classifier loaded on device: {next(dataset_classifier.parameters()).device}")
     
     # logger.info(f"Classifier supports datasets: {dataset_names}")
     debugprint(f"分类器支持的数据集: {dataset_names}")
@@ -304,7 +325,7 @@ def select_adapter_dynamic_conpet(
         debugprint(f"批次中的样本原始索引: {indices}")
         
         # Move batch to device
-        batch = {k: v.to(current_device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+        batch = {k: v.to(current_device_obj) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
         
         # Forward pass to get hidden states
         with torch.no_grad():
@@ -390,6 +411,8 @@ def main():
     parser.add_argument("--dataset-path", type=str, required=True, help="Test dataset path")
     parser.add_argument("--multi-adapter-dir", type=str, help="Multi-adapter directory, can override config file setting")
     parser.add_argument("--batch-size", type=int, default=16, help="Feature extraction batch size")
+    # Add device argument to parser, consistent with how training_args.device would be set
+    parser.add_argument("--device", type=str, default=None, help="Device to use for selector (e.g., 'cuda:0', 'cpu'). Defaults to eval_args.device from config.")
     
     args = parser.parse_args()
     debugprint(f"解析到的命令行参数: {args}")
@@ -414,6 +437,14 @@ def main():
     debugprint(f"最终使用的 multi_adapter_dir: {eval_args.multi_adapter_dir}")
     debugprint(f"当前任务名称 (eval_args.task): {eval_args.task}")
 
+    # Determine device for the selector
+    # Priority: command-line arg -> eval_args.device from config
+    selector_device = args.device if args.device is not None else eval_args.device
+    if selector_device is None: # Should not happen if eval_args.device has a default
+        selector_device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        logger.warning(f"Device for selector not explicitly set, defaulting to {selector_device}")
+    logger.info(f"Dynamic ConPet Selector main: Running selector on device: {selector_device}")
+
     # Run selector
     debugprint("运行 select_adapter_dynamic_conpet")
     select_adapter_dynamic_conpet(
@@ -424,7 +455,7 @@ def main():
         dataset_path=args.dataset_path,
         multi_adapter_dir=eval_args.multi_adapter_dir,
         task_name=eval_args.task,
-        device=eval_args.device, # 显式传递 eval_args.device
+        device=selector_device, # 显式传递 selector_device
         batch_size=args.batch_size
     )
     debugprint("Dynamic ConPet Selector 主程序结束")

@@ -176,16 +176,40 @@ def select_adapter(
         raise ValueError(f"ABSCL statistics file not found: {stats_file}")
         
     logger.info(f"Loading ABSCL feature statistics: {stats_file}")
-    stats = torch.load(stats_file)
+    stats = torch.load(stats_file, map_location=current_device) # map_location for safety
     
     # 获取所有任务的均值和共享协方差矩阵的逆
-    task_means = stats["task_means"]
-    if not task_means:
+    task_means_original = stats["task_means"]
+    if not task_means_original:
         raise ValueError("No task mean data in statistics")
         
-    cov_matrix = stats["cov_matrix"]
-    if cov_matrix is None:
+    cov_matrix_original = stats["cov_matrix"]
+    if cov_matrix_original is None:
         raise ValueError("No covariance matrix in statistics")
+        
+    # Convert cov_matrix to float32 before numpy conversion
+    logger.info(f"Original covariance matrix dtype: {cov_matrix_original.dtype}")
+    if cov_matrix_original.dtype == torch.bfloat16:
+        logger.info("Converting covariance matrix from bfloat16 to float32.")
+        cov_matrix = cov_matrix_original.to(torch.float32)
+    elif cov_matrix_original.dtype != torch.float32:
+        logger.info(f"Converting covariance matrix from {cov_matrix_original.dtype} to float32.")
+        cov_matrix = cov_matrix_original.to(torch.float32)
+    else:
+        cov_matrix = cov_matrix_original
+
+    # Convert task_means to float32
+    task_means = {}
+    for k, v_mean in task_means_original.items():
+        logger.info(f"Original dtype for task_mean '{k}': {v_mean.dtype}")
+        if v_mean.dtype == torch.bfloat16:
+            task_means[k] = v_mean.to(torch.float32)
+            logger.info(f"Converted task_mean '{k}' from bfloat16 to float32.")
+        elif v_mean.dtype != torch.float32:
+            task_means[k] = v_mean.to(torch.float32)
+            logger.info(f"Converted task_mean '{k}' from {v_mean.dtype} to float32.")
+        else:
+            task_means[k] = v_mean
         
     # 计算协方差矩阵的逆
     # 添加小的正则化项，确保矩阵可逆
@@ -282,7 +306,7 @@ def select_adapter(
     
     # 移动协方差逆矩阵到正确设备
     cov_inv = cov_inv.to(current_device)
-    # 将任务均值移到正确设备
+    # 将任务均值移到正确设备 (already converted to float32 and moved if necessary)
     task_means = {k: v.to(current_device) for k, v in task_means.items()}
     
     sample_idx = 0
@@ -320,12 +344,23 @@ def select_adapter(
                 batch_size_actual = hidden_states.size(0)
                 
                 # 获取每个样本的最后一个token的隐藏状态
-                features = torch.stack(
+                features_original = torch.stack(
                     [hidden_states[i, seq_lengths[i]] for i in range(batch_size_actual)]
                 )
             else:
                 # 如果没有attention_mask，就使用每个序列的最后一个token
-                features = hidden_states[:, -1]
+                features_original = hidden_states[:, -1]
+
+            # Ensure features are float32
+            logger.debug(f"Original features dtype: {features_original.dtype}")
+            if features_original.dtype == torch.bfloat16:
+                features = features_original.to(torch.float32)
+                logger.debug("Converted features from bfloat16 to float32.")
+            elif features_original.dtype != torch.float32:
+                features = features_original.to(torch.float32)
+                logger.debug(f"Converted features from {features_original.dtype} to float32.")
+            else:
+                features = features_original
             
             # 为批次中的每个样本计算与各任务均值的距离
             for i in range(features.size(0)):
@@ -343,7 +378,11 @@ def select_adapter(
                     if task_id not in task_to_adapter:
                         continue
                         
-                    distance = mahalanobis_distance(feature, mean, cov_inv)
+                    # Ensure mean is float32 (should be already, but as a safeguard)
+                    if mean.dtype != torch.float32:
+                        mean = mean.to(torch.float32)
+                        
+                    distance = mahalanobis_distance(feature, mean, cov_inv) # feature and cov_inv are already float32
                     
                     if distance < min_distance:
                         min_distance = distance
