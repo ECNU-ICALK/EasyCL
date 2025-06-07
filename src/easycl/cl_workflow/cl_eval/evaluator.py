@@ -261,14 +261,22 @@ class CLEvalEvaluator(BaseEvaluator):
 
     def _load_multi_adapter_config(self) -> None:
         """加载多adapter配置文件"""
-        # 获取配置文件路径
+        # 获取配置文件路径，确保multi_adapter_dir为绝对路径
         multi_adapter_dir = self.eval_args.multi_adapter_dir
+        
+        # 将multi_adapter_dir转换为绝对路径
+        if not os.path.isabs(multi_adapter_dir):
+            multi_adapter_dir = os.path.abspath(multi_adapter_dir)
+            logger.info(f"Converting multi_adapter_dir to absolute path: {multi_adapter_dir}") # English log
+        
         config_path = os.path.join(multi_adapter_dir, "multiadapter_selected_config.json")
         
         if not os.path.exists(config_path):
+            logger.error(f"Multi-adapter config file not found: {config_path}") # English log
             raise FileNotFoundError(f"多Adapter配置文件未找到: {config_path}")
         
         # 加载配置文件
+        logger.info(f"Loading multi-adapter config from: {config_path}") # English log
         with open(config_path, "r", encoding="utf-8") as f:
             self.adapter_config = json.load(f)
         
@@ -278,7 +286,7 @@ class CLEvalEvaluator(BaseEvaluator):
         
         # 验证任务名称是否匹配
         if self.adapter_config["task_name"] != self.eval_args.task:
-            print(f"警告: 配置文件中的任务名称 ({self.adapter_config['task_name']}) 与当前评估任务 ({self.eval_args.task}) 不一致")
+            logger.warning(f"Task name mismatch: config has '{self.adapter_config['task_name']}', current task is '{self.eval_args.task}'") # English log
         
         # 创建adapter路径映射 (使用相对路径转换为绝对路径)
         self.adapter_paths = {}
@@ -286,12 +294,23 @@ class CLEvalEvaluator(BaseEvaluator):
             if "path" in adapter_info:
                 # 将相对路径转换为绝对路径
                 rel_path = adapter_info["path"]
+                
                 # 确认路径是否已经是绝对路径
                 if os.path.isabs(rel_path):
                     abs_path = rel_path
+                    logger.debug(f"Adapter '{adapter_name}' uses absolute path: {abs_path}") # English log
                 else:
+                    # 相对路径：相对于multi_adapter_dir
                     abs_path = os.path.join(multi_adapter_dir, rel_path)
+                    logger.debug(f"Converted adapter '{adapter_name}' relative path '{rel_path}' to absolute: {abs_path}") # English log
+                
+                # 验证adapter路径是否存在
+                if not os.path.exists(abs_path):
+                    logger.error(f"Adapter path does not exist: {abs_path} (for adapter '{adapter_name}')") # English log
+                    raise FileNotFoundError(f"Adapter路径不存在: {abs_path} (adapter: {adapter_name})")
+                
                 self.adapter_paths[adapter_name] = abs_path
+                logger.info(f"Registered adapter '{adapter_name}' with path: {abs_path}") # English log
             else:
                 raise ValueError(f"Adapter {adapter_name} 缺少路径信息")
         
@@ -305,54 +324,59 @@ class CLEvalEvaluator(BaseEvaluator):
             else:
                 raise ValueError(f"Adapter {adapter_name} 缺少样本索引信息")
         
-        print(f"已加载 {len(self.adapter_paths)} 个Adapters 和 {len(self.index_to_adapter)} 个样本映射")
+        logger.info(f"Successfully loaded {len(self.adapter_paths)} adapters and {len(self.index_to_adapter)} sample mappings") # English log
 
     def _load_adapter(self, adapter_path: str) -> None:
         """加载指定的adapter，通过重新加载整个模型实现"""
         # 如果已经加载了相同的adapter，则无需重新加载
         if self.current_adapter_path == adapter_path:
-            print(f"信息: Adapter {adapter_path} 已加载，无需切换。")
+            logger.info(f"Adapter {adapter_path} already loaded, no need to switch") # English log
             return
 
-        print(f"信息: 准备加载新的 adapter: {adapter_path}")
+        logger.info(f"Preparing to load new adapter: {adapter_path}") # English log
 
         # 卸载当前模型以释放资源
         if hasattr(self, "model") and self.model is not None:
-            print(f"信息: 卸载当前模型以加载 adapter: {adapter_path}")
+            logger.info(f"Unloading current model to load adapter: {adapter_path}") # English log
             del self.model
             self.model = None
             gc.collect()
             torch.cuda.empty_cache()
-            print(f"信息: 当前模型已卸载，CUDA 缓存已清理")
+            logger.info("Current model unloaded, CUDA cache cleared") # English log
 
         # 创建model_args的深拷贝以避免修改原始配置
         temp_model_args = copy.deepcopy(self.model_args)
         
         # 将adapter_name_or_path设置为目标adapter路径
         # 关键修改：确保adapter_path被正确处理（本地路径或Hugging Face路径）
-        if os.path.exists(adapter_path) or os.path.isdir(adapter_path):
+        if adapter_path and (os.path.exists(adapter_path) or os.path.isdir(adapter_path)):
             # 如果是本地路径，使用列表格式，与SSR中的处理方式一致
             temp_model_args.adapter_name_or_path = [adapter_path]
-            print(f"信息: 检测到本地适配器路径: {adapter_path}")
-        else:
+            logger.info(f"Detected local adapter path: {adapter_path}") # English log
+        elif adapter_path:
             # 如果可能是Hugging Face路径，保持原样
             temp_model_args.adapter_name_or_path = adapter_path
+            logger.info(f"Using adapter path as-is (possibly Hugging Face): {adapter_path}") # English log
+        else:
+            # 如果没有提供adapter路径，将加载基础模型
+            temp_model_args.adapter_name_or_path = None
+            logger.info("No adapter path provided, will load base model") # English log
         
-        print(f"信息: 设置 adapter_name_or_path 为: {temp_model_args.adapter_name_or_path} (类型: {type(temp_model_args.adapter_name_or_path)})")
+        logger.info(f"Set adapter_name_or_path to: {temp_model_args.adapter_name_or_path} (type: {type(temp_model_args.adapter_name_or_path)})") # English log
         
         # 设置finetuning_type为lora，确保正确加载
         # 如果adapter_path为空，则加载基础模型，无需设置finetuning_type
         temp_finetuning_args = copy.deepcopy(self.finetuning_args)
         if adapter_path:
             temp_finetuning_args.finetuning_type = "lora"
-            print(f"信息: 设置 finetuning_type 为 lora 以加载 adapter: {adapter_path}")
+            logger.info(f"Set finetuning_type to lora to load adapter: {adapter_path}") # English log
         else:
             # 如果没有提供adapter路径，确保finetuning_type不是lora，防止意外加载
             temp_finetuning_args.finetuning_type = None
-            print("信息: 未提供 adapter 路径，将加载基础模型")
+            logger.info("No adapter path provided, will load base model") # English log
 
         # 使用load_model重新加载模型和指定的adapter
-        print(f"信息: 调用 load_model 加载模型及 adapter: {adapter_path if adapter_path else '基础模型'}")
+        logger.info(f"Calling load_model to load model and adapter: {adapter_path if adapter_path else 'base model'}") # English log
         try:
             # load_model 需要 tokenizer, model_args, finetuning_args
             self.model = load_model(
@@ -361,20 +385,20 @@ class CLEvalEvaluator(BaseEvaluator):
                 finetuning_args=temp_finetuning_args
             )
             self.current_adapter_path = adapter_path
-            print(f"信息: 成功加载模型及 adapter: {adapter_path if adapter_path else '基础模型'}")
+            logger.info(f"Successfully loaded model and adapter: {adapter_path if adapter_path else 'base model'}") # English log
             
             # 验证adapter是否实际激活 (如果加载了adapter)
             if adapter_path:
                 if hasattr(self.model, "active_adapters") and self.model.active_adapters:
-                    print(f"信息: 检测到激活的 adapters")
+                    logger.info("Detected active adapters") # English log
                 elif hasattr(self.model, "active_adapter") and self.model.active_adapter:
                      # 兼容旧版peft
-                     print(f"信息: 检测到激活的 adapter")
+                     logger.info("Detected active adapter") # English log
                 else:
-                    print(f"警告: 加载 adapter {adapter_path} 后，未检测到激活的 adapter。请检查模型或Peft版本。")
+                    logger.warning(f"After loading adapter {adapter_path}, no active adapter detected. Please check model or PEFT version.") # English log
 
         except Exception as e:
-            print(f"错误: 使用 load_model 加载 adapter {adapter_path} 时出错: {str(e)}")
+            logger.error(f"Error loading adapter {adapter_path} using load_model: {str(e)}") # English log
             # 尝试恢复到某种状态，或者抛出异常
             self.current_adapter_path = None # 加载失败，重置状态
             raise RuntimeError(f"无法加载 adapter {adapter_path}") from e
@@ -546,7 +570,7 @@ class CLEvalEvaluator(BaseEvaluator):
                 # 获取adapter路径
                 adapter_path = self.adapter_paths.get(adapter_name)
                 if not adapter_path:
-                    print(f"错误: adapter {adapter_name} 未找到对应的路径")
+                    logger.error(f"Adapter '{adapter_name}' not found in adapter_paths mapping. Available adapters: {list(self.adapter_paths.keys())}") # English log
                     continue
                 
                 # 将样本添加到对应adapter组
