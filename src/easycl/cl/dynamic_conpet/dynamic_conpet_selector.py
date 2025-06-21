@@ -360,11 +360,12 @@ def select_adapter_dynamic_conpet(
                     adapter_id = list(task_to_adapter.keys())[0]
                     debugprint(f"  无映射且无当前任务适配器，使用第一个可用适配器ID: '{adapter_id}'")
                 
-                # Record adapter assignment
-                adapter_path = task_to_adapter[adapter_id]
-                adapter_assignments[adapter_id]["path"] = adapter_path
+                # Record adapter assignment - use full path instead of relative path
+                adapter_relative_path = task_to_adapter[adapter_id]
+                adapter_full_path = os.path.join(multi_adapter_dir, adapter_relative_path)
+                adapter_assignments[adapter_id]["path"] = adapter_full_path
                 adapter_assignments[adapter_id]["indices"].append(original_idx)
-                debugprint(f"  分配给适配器: ID='{adapter_id}', Path='{adapter_path}', 样本索引={original_idx}")
+                debugprint(f"  分配给适配器: ID='{adapter_id}', RelativePath='{adapter_relative_path}', FullPath='{adapter_full_path}', 样本索引={original_idx}")
                 
                 sample_idx += 1
     debugprint(f"总共处理了 {sample_idx} 个样本")
@@ -385,11 +386,11 @@ def select_adapter_dynamic_conpet(
     debugprint(f"适配器选择配置已保存到: {output_config_path}")
     
     # Print statistics
-    # logger.info("Adapter allocation statistics:")
+    logger.info("Adapter allocation statistics:")
     debugprint("适配器分配统计:")
     for task_id, data in adapter_assignments.items():
-        # logger.info(f"Task {task_id}: Assigned {len(data['indices'])} samples")
-        debugprint(f"  任务 {task_id}: 分配了 {len(data['indices'])} 个样本")
+        logger.info(f"Task {task_id}: Assigned {len(data['indices'])} samples, Path: {data['path']}")
+        debugprint(f"  任务 {task_id}: 分配了 {len(data['indices'])} 个样本, 路径: {data['path']}")
     
     # Free resources
     debugprint("释放模型和分类器资源")
