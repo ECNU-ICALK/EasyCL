@@ -57,114 +57,112 @@ class CustomDatasetAdapter:
         support_set: Optional[List[Dict]] = None,
         dataset_specific_info: Optional[Dict] = None
     ) -> List[Dict[str, str]]:
+        """格式化样本数据为消息列表格式"""
         messages_to_log_and_return = []
 
-        # --- Get base tags for the output message structure (for LlamaFactory model) ---
-        output_struct_tags = dataset_specific_info.get("tags", {}) if dataset_specific_info else {}
-        output_role_tag = output_struct_tags.get("role_tag", "role")
-        output_content_tag = output_struct_tags.get("content_tag", "content")
-        output_user_role_val = output_struct_tags.get("user_tag", "user")
-        output_assistant_role_val = output_struct_tags.get("assistant_tag", "assistant")
-        # Allow for a system role in the output structure if defined
-        output_system_role_val = output_struct_tags.get("system_tag", "system")
+        # 获取数据集配置信息
+        if dataset_specific_info:
+            formatting = dataset_specific_info.get("formatting", "alpaca")
+            columns = dataset_specific_info.get("columns", {})
+            tags = dataset_specific_info.get("tags", {})
+        else:
+            formatting = "alpaca"
+            columns = {}
+            tags = {}
 
-        # --- Get keys/tags for parsing the *input data* (e.g., ShareGPT fields) ---
-        ds_columns = dataset_specific_info.get("columns", {}) if dataset_specific_info else {}
-        ds_messages_key = ds_columns.get("messages", "conversations") # Key for the list of turns
+        # 获取标签映射
+        role_tag = tags.get("role_tag", "from")
+        content_tag = tags.get("content_tag", "value")
+        user_tag = tags.get("user_tag", "human")
+        assistant_tag = tags.get("assistant_tag", "gpt")
+        system_tag = tags.get("system_tag", "system")
 
-        ds_data_tags = dataset_specific_info.get("tags", {}) if dataset_specific_info else {}
-        # Keys *within each turn* of a ShareGPT message list
-        ds_role_key_in_turn = ds_data_tags.get("role_tag", "from") # e.g., "role" or "from"
-        ds_content_key_in_turn = ds_data_tags.get("content_tag", "value") # e.g., "content" or "value"
-        # Actual role values *within each turn* of ShareGPT data
-        ds_user_role_val_in_turn = ds_data_tags.get("user_tag", "human")
-        ds_assistant_role_val_in_turn = ds_data_tags.get("assistant_tag", "gpt")
-        ds_system_role_val_in_turn = ds_data_tags.get("system_tag", "system") # Role value for system in input data
+        # 获取列映射
+        messages_key = columns.get("messages", "conversations")
+        images_key = columns.get("images", "image")
 
-        # Helper to get assistant response from an example item (defined in the previous step)
-        # This helper should be part of the class or accessible here.
-        # For this edit, we assume `get_response_from_item` is correctly defined as before.
-        # staticmethod def get_response_from_item(item_data: Dict, dsi: Optional[Dict], fallback_key: str) -> str: ...
-
-        # 1. Process Few-Shot Examples (support_set)
+        # 1. 处理Few-Shot示例
         if support_set:
             for s_ex in support_set:
-                is_support_sharegpt = (dataset_specific_info and
-                                       dataset_specific_info.get("formatting") == "sharegpt" and
-                                       ds_messages_key in s_ex and
-                                       isinstance(s_ex[ds_messages_key], list))
-
-                if is_support_sharegpt:
-                    for turn in s_ex[ds_messages_key]:
-                        if not isinstance(turn, dict) or ds_role_key_in_turn not in turn:
+                if formatting == "sharegpt" and messages_key in s_ex:
+                    # ShareGPT格式
+                    for turn in s_ex[messages_key]:
+                        if not isinstance(turn, dict):
                             continue
-                        role_from_data = turn[ds_role_key_in_turn]
-                        content_from_data = turn.get(ds_content_key_in_turn, "")
                         
-                        mapped_role = output_user_role_val # Default
-                        if role_from_data == ds_assistant_role_val_in_turn:
-                            mapped_role = output_assistant_role_val
-                        elif role_from_data == ds_system_role_val_in_turn:
-                            mapped_role = output_system_role_val
-                        # else it's user (ds_user_role_val_in_turn) or unmapped, defaults to output_user_role_val
-
-                        messages_to_log_and_return.append({output_role_tag: mapped_role, output_content_tag: content_from_data})
-                else: # Not ShareGPT or malformed for support example
-                    s_prompt_text = s_ex.get("instruction", "")
+                        # 直接复制turn内容，保持原始结构
+                        message = dict(turn)  # 创建副本
+                        messages_to_log_and_return.append(message)
+                else:
+                    # Alpaca格式
+                    prompt = s_ex.get("instruction", "")
                     if s_ex.get("input"):
-                        s_prompt_text = f"{s_prompt_text}\\n{s_ex['input']}"
-                    s_response = CustomDatasetAdapter.get_response_from_item(s_ex, dataset_specific_info, "output")
-                    messages_to_log_and_return.append({output_role_tag: output_user_role_val, output_content_tag: f"{s_prompt_text}\\nAnswer:"})
-                    messages_to_log_and_return.append({output_role_tag: output_assistant_role_val, output_content_tag: s_response})
+                        prompt = f"{prompt}\n{s_ex['input']}"
+                    response = CustomDatasetAdapter.get_response_from_item(s_ex, dataset_specific_info, "output")
+                    
+                    messages_to_log_and_return.append({
+                        role_tag: user_tag,
+                        content_tag: f"{prompt}\nAnswer:"
+                    })
+                    messages_to_log_and_return.append({
+                        role_tag: assistant_tag,
+                        content_tag: response
+                    })
 
-        # 2. Process the Main Example
-        # This is the ground truth assistant response for the main example.
-        main_example_ground_truth_response = CustomDatasetAdapter.get_response_from_item(example, dataset_specific_info, "output")
-
-        is_main_sharegpt = (dataset_specific_info and
-                            dataset_specific_info.get("formatting") == "sharegpt" and
-                            ds_messages_key in example and
-                            isinstance(example[ds_messages_key], list))
-
-        if is_main_sharegpt:
-            # For ShareGPT, the example[ds_messages_key] contains the full interaction,
-            # including the user's query and often the assistant's ground truth response as the last turn.
-            # LlamaFactory's template.encode_oneturn expects the full conversation, where the
-            # last assistant message is treated as the label.
-            for turn_idx, turn in enumerate(example[ds_messages_key]):
-                if not isinstance(turn, dict) or ds_role_key_in_turn not in turn:
-                    continue
-                role_from_data = turn[ds_role_key_in_turn]
-                content_from_data = turn.get(ds_content_key_in_turn, "")
-                
-                mapped_role = output_user_role_val # Default to user
-                if role_from_data == ds_assistant_role_val_in_turn:
-                    mapped_role = output_assistant_role_val
-                elif role_from_data == ds_system_role_val_in_turn:
-                    mapped_role = output_system_role_val
-                # else it's user (ds_user_role_val_in_turn) or unmapped, defaults to output_user_role_val
-
-                messages_to_log_and_return.append({output_role_tag: mapped_role, output_content_tag: content_from_data})
+        # 2. 处理主要示例
+        if formatting == "sharegpt" and messages_key in example:
+            # ShareGPT格式 - 直接复制对话结构，包含所有多模态信息
+            example_messages = example[messages_key]
             
-            # Ensure the last message is indeed the assistant's ground truth if the ShareGPT data structure implies it.
-            # If the ShareGPT data ends with a user message (i.e., it's a prompt for generation and ground truth is separate),
-            # then `main_example_ground_truth_response` (extracted earlier) must be appended.
-            # However, typical ShareGPT for SFT/eval includes the assistant's response in the list.
-            # The `get_response_from_item` should correctly extract this last assistant response if it's part of the turns.
-            # If `example[ds_messages_key]` does NOT contain the final assistant response (e.g. if it's only a prompt),
-            # we might need to append `main_example_ground_truth_response` manually.
-            # For now, assume ShareGPT data for eval includes the target assistant response.
-            # If the last message in messages_to_log_and_return is not an assistant message,
-            # or if its content doesn't match main_example_ground_truth_response, this could be an issue.
-            # This logic relies on template.encode_oneturn correctly identifying the label from the last assistant message.
-
-        else: # Not ShareGPT or malformed for main example
-            question_text = example.get("instruction", "")
+            for turn in example_messages:
+                if not isinstance(turn, dict):
+                    continue
+                
+                # 直接复制turn内容，保持原始结构和多模态信息
+                message = dict(turn)  # 创建副本
+                messages_to_log_and_return.append(message)
+            
+            # 如果有独立的图像信息，添加到第一个用户消息中
+            if images_key in example and example[images_key]:
+                # 查找第一个用户消息
+                for msg in messages_to_log_and_return:
+                    if msg.get(role_tag) == user_tag:
+                        # 如果消息中还没有图像信息，添加
+                        if "images" not in msg:
+                            images = example[images_key]
+                            if isinstance(images, str):
+                                msg["images"] = [images]
+                            elif isinstance(images, list):
+                                msg["images"] = images
+                        break
+        else:
+            # Alpaca格式或其他格式
+            question = example.get("instruction", "")
             if example.get("input"):
-                question_text = f"{question_text}\\n{example['input']}"
-            messages_to_log_and_return.append({output_role_tag: output_user_role_val, output_content_tag: f"{question_text}\\nAnswer:"})
-            # The ground truth (label) for the model
-            messages_to_log_and_return.append({output_role_tag: output_assistant_role_val, output_content_tag: main_example_ground_truth_response})
+                question = f"{question}\n{example['input']}"
+            
+            # 创建用户消息
+            user_message = {
+                role_tag: user_tag,
+                content_tag: f"{question}\nAnswer:"
+            }
+            
+            # 处理多模态信息
+            if images_key in example and example[images_key]:
+                images = example[images_key]
+                if isinstance(images, str):
+                    user_message["images"] = [images]
+                elif isinstance(images, list):
+                    user_message["images"] = images
+            
+            messages_to_log_and_return.append(user_message)
+            
+            # 添加助手响应（用于训练或评估的ground truth）
+            response = CustomDatasetAdapter.get_response_from_item(example, dataset_specific_info, "output")
+            messages_to_log_and_return.append({
+                role_tag: assistant_tag,
+                content_tag: response
+            })
 
         return messages_to_log_and_return
 
