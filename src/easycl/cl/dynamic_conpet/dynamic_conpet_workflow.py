@@ -62,7 +62,6 @@ def run_sft_dynamic_conpet(
     debugprint("加载 tokenizer 和模板")
     tokenizer_module = load_tokenizer(model_args)
     tokenizer = tokenizer_module["tokenizer"]
-    processor = tokenizer_module.get("processor", None)
     template = get_template_and_fix_tokenizer(tokenizer, data_args)
 
     # ============= Prepare current and historical datasets (1:1 ratio) =============
