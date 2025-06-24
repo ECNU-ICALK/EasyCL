@@ -486,7 +486,7 @@ def run_sft_dynamic_conpet(
             cl_finetuning_args=cl_finetuning_args,
             data_collator=data_collator,
             callbacks=current_callbacks,
-            processor=processor,
+            
             dataset_classifier=dataset_classifier,
             dataset_names=dataset_names,
             dataset_indices_map=dataset_indices_map_for_trainer,
@@ -505,7 +505,7 @@ def run_sft_dynamic_conpet(
             finetuning_args=finetuning_args_shared,
             data_collator=data_collator,
             callbacks=current_callbacks,
-            processor=processor,
+            
             gen_kwargs=gen_kwargs,
             train_dataset=dataset_module.get("train_dataset"),
             eval_dataset=dataset_module.get("eval_dataset"),
@@ -698,7 +698,7 @@ def run_sft_dynamic_conpet(
         finetuning_args=finetuning_args_task,
         data_collator=data_collator,
         callbacks=current_callbacks_task,
-        processor=processor,
+        
         gen_kwargs=gen_kwargs,
         train_dataset=dataset_module.get("train_dataset"),
         eval_dataset=dataset_module.get("eval_dataset"),
