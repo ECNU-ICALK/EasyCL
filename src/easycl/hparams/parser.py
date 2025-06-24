@@ -22,6 +22,7 @@ from .cl_finetuning_args import CLFinetuningArguments
 from .cl_evaluation_args import CLEvaluationArguments
 from llamafactory.extras.misc import is_env_enabled, check_dependencies, check_version, get_current_device
 from llamafactory.extras.constants import CHECKPOINT_NAMES
+from llamafactory.hparams.parser import get_train_args as llama_get_train_args, get_eval_args as llama_get_eval_args
 
 logger = logging.get_logger(__name__)
 
@@ -200,7 +201,13 @@ def get_ray_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> Ray
 
 
 def get_train_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> _TRAIN_CLS:
-    model_args, data_args, training_args, finetuning_args, cl_finetuning_args, generating_args = _parse_train_args(args)
+    os.environ["ALLOW_EXTRA_ARGS"] = "1"
+    model_args, data_args, training_args, finetuning_args, generating_args = llama_get_train_args(args)
+
+    cl_parser = HfArgumentParser(CLFinetuningArguments)
+    cl_finetuning_args, = _parse_args(cl_parser, args, allow_extra_keys=True)
+    
+    del os.environ["ALLOW_EXTRA_ARGS"]
     return model_args, data_args, training_args, finetuning_args, cl_finetuning_args, generating_args
 
 
