@@ -439,12 +439,14 @@ def run_sft_dynamic_conpet(
 
     debugprint("创建 SFTDataCollatorWith4DAttentionMask (共享适配器)")
     data_collator = SFTDataCollatorWith4DAttentionMask(
-        tokenizer=tokenizer,
         template=template,
         model=model if not training_args_shared.predict_with_generate else None,
         pad_to_multiple_of=8 if training_args_shared.do_train else None,  # Use shared training args
         label_pad_token_id=IGNORE_INDEX if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id,
+        block_diag_attn=model_args_shared.block_diag_attn,
         attn_implementation=getattr(model.config, "_attn_implementation", None),
+        compute_dtype=model_args_shared.compute_dtype,
+        **tokenizer_module,
     )
 
     # Override the decoding parameters of Seq2SeqTrainer
@@ -656,11 +658,14 @@ def run_sft_dynamic_conpet(
 
     debugprint("创建 SFTDataCollatorWith4DAttentionMask (任务适配器)")
     data_collator = SFTDataCollatorWith4DAttentionMask(
-        tokenizer=tokenizer,
         template=template,
         model=model if not training_args_task.predict_with_generate else None,
         pad_to_multiple_of=8 if training_args_task.do_train else None,  # Use the same data collator instance
         label_pad_token_id=IGNORE_INDEX if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id,
+        block_diag_attn=model_args_task.block_diag_attn,
+        attn_implementation=getattr(model.config, "_attn_implementation", None),
+        compute_dtype=model_args_task.compute_dtype,
+        **tokenizer_module,
     )
 
     # Override the decoding parameters of Seq2SeqTrainer for task adapter
