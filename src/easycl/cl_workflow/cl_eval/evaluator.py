@@ -745,10 +745,10 @@ class CLEvalEvaluator(BaseEvaluator):
         return outputs
     
     def _process_batch_with_current_adapter(self, batch: List[Dict]) -> List[Dict]:
-        """使用当前加载的adapter处理一批样本"""
-        # 格式化输入
+        """使用当前适配器处理批次数据"""
+        # 格式化输入数据
         formatted_examples = []
-        dataset_specific_info = self.dataset_info.get(self.eval_args.task) if self.dataset_info else None # Get dataset specific info
+        dataset_specific_info = self.dataset_info.get(self.eval_args.task) if self.dataset_info else None
 
         for example in batch:
             formatted = self.adapter.format_example(
@@ -757,9 +757,9 @@ class CLEvalEvaluator(BaseEvaluator):
                 subject_name=self.subject_name if hasattr(self, 'subject_name') else "",
                 dataset_name=self.eval_args.task,
                 support_set=self.dev_examples if hasattr(self, 'dev_examples') else [],
-                dataset_specific_info=dataset_specific_info # Pass dataset specific info
+                dataset_specific_info=dataset_specific_info
             )
-            if formatted:  # 确保格式化结果不为空
+            if formatted:
                 formatted_examples.append(formatted)
 
         if not formatted_examples:
@@ -768,16 +768,24 @@ class CLEvalEvaluator(BaseEvaluator):
         # 编码输入
         inputs = []
         for messages in formatted_examples:
-            # 使用encode_oneturn方法进行编码
-            input_ids, _ = self.template.encode_oneturn(
-                tokenizer=self.tokenizer,
-                messages=messages
-            )
-            if input_ids:  # 确保编码结果不为空
-                inputs.append({
-                    "input_ids": input_ids,
-                    "attention_mask": [1] * len(input_ids)
-                })
+            try:
+                # 处理多模态数据的格式转换
+                processed_messages = self._process_multimodal_messages(messages, dataset_specific_info)
+                
+                # 使用encode_oneturn方法进行编码
+                input_ids, _ = self.template.encode_oneturn(
+                    tokenizer=self.tokenizer,
+                    messages=processed_messages
+                )
+                if input_ids:
+                    inputs.append({
+                        "input_ids": input_ids,
+                        "attention_mask": [1] * len(input_ids)
+                    })
+            except Exception as e:
+                logger.error(f"Error encoding message: {e}")
+                # 跳过编码失败的样本
+                continue
 
         if not inputs:
             return [{"prediction": "", "is_correct": False, "match_type": "format"} for _ in batch]
@@ -811,17 +819,15 @@ class CLEvalEvaluator(BaseEvaluator):
             # 使用 GeneratingArguments 配置生成参数
             generation_kwargs = {
                 "max_new_tokens": self.generating_args.max_new_tokens,
-                "num_beams": 1, # MMLU: greedy search
-                "do_sample": False, # MMLU: no sampling
-                "temperature": 0.0, # MMLU: temperature 0
-                "top_p": None, # MMLU: not applicable with do_sample=False
-                "top_k": None, # MMLU: not applicable with do_sample=False
-                "repetition_penalty": self.generating_args.repetition_penalty, # Keep or set to 1.0 if MMLU specifies
-                "length_penalty": self.generating_args.length_penalty, # Keep or set to 1.0 if MMLU specifies
-                # Handle potential absence of early_stopping in older GeneratingArguments
-                "early_stopping": getattr(self.generating_args, "early_stopping", False), 
-                # Handle potential absence of no_repeat_ngram_size
-                "no_repeat_ngram_size": getattr(self.generating_args, "no_repeat_ngram_size", 0), 
+                "num_beams": 1,
+                "do_sample": False,
+                "temperature": 0.0,
+                "top_p": None,
+                "top_k": None,
+                "repetition_penalty": self.generating_args.repetition_penalty,
+                "length_penalty": self.generating_args.length_penalty,
+                "early_stopping": getattr(self.generating_args, "early_stopping", False),
+                "no_repeat_ngram_size": getattr(self.generating_args, "no_repeat_ngram_size", 0),
                 "pad_token_id": self.tokenizer.pad_token_id,
                 "eos_token_id": self.tokenizer.eos_token_id,
             }
@@ -842,15 +848,15 @@ class CLEvalEvaluator(BaseEvaluator):
             for j, (pred, example) in enumerate(zip(predictions, batch[i:i + self.eval_args.batch_size])):
                 # Truncate prediction at the first newline character
                 if '\n' in pred:
-                    pred = pred.split('\n', 1)[0].strip() # Split once and take the first part, strip again
+                    pred = pred.split('\n', 1)[0].strip()
                 else:
-                    pred = pred.strip() # Ensure stripping even if no newline
+                    pred = pred.strip()
 
                 result = self.adapter.process_result(
                     pred,
                     example,
                     self.eval_args.task,
-                    dataset_specific_info=dataset_specific_info # Pass dataset specific info
+                    dataset_specific_info=dataset_specific_info
                 )
                 outputs.append(result)
 
@@ -861,6 +867,61 @@ class CLEvalEvaluator(BaseEvaluator):
             outputs = outputs[:len(batch)]
 
         return outputs
+
+    def _process_multimodal_messages(self, messages: List[Dict], dataset_specific_info: Optional[Dict] = None) -> List[Dict]:
+        """处理多模态消息格式，确保符合LlamaFactory的期望格式"""
+        processed_messages = []
+        
+        # 获取标签映射信息
+        if dataset_specific_info and "tags" in dataset_specific_info:
+            tags = dataset_specific_info["tags"]
+            role_tag = tags.get("role_tag", "from")
+            content_tag = tags.get("content_tag", "value")
+            user_tag = tags.get("user_tag", "human")
+            assistant_tag = tags.get("assistant_tag", "gpt")
+            system_tag = tags.get("system_tag", "system")
+        else:
+            # 默认映射 (ShareGPT格式)
+            role_tag = "from"
+            content_tag = "value"
+            user_tag = "human"
+            assistant_tag = "gpt"
+            system_tag = "system"
+        
+        # 创建role映射表 - 从dataset标签到标准Role值
+        from llamafactory.data import Role
+        tag_mapping = {
+            user_tag: Role.USER.value,
+            assistant_tag: Role.ASSISTANT.value,
+            system_tag: Role.SYSTEM.value,
+        }
+        
+        for message in messages:
+            processed_message = {}
+            
+            # 处理role字段
+            original_role = message.get(role_tag, "")
+            if original_role in tag_mapping:
+                processed_message["role"] = tag_mapping[original_role]
+            else:
+                # 如果role已经是标准格式，直接使用
+                if original_role in ["user", "assistant", "system", "function", "observation"]:
+                    processed_message["role"] = original_role
+                else:
+                    # 默认为user
+                    processed_message["role"] = Role.USER.value
+            
+            # 处理content字段
+            processed_message["content"] = message.get(content_tag, message.get("content", ""))
+            
+            # 保留其他字段（如images等）
+            for key, value in message.items():
+                if key not in [role_tag, content_tag, "role", "content"]:
+                    processed_message[key] = value
+            
+            processed_messages.append(processed_message)
+        
+        return processed_messages
     
     def evaluate_custom_dataset(self) -> Dict:
         """评估自定义数据集"""
