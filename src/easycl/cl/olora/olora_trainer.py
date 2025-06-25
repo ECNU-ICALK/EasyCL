@@ -56,7 +56,7 @@ class OLoRATrainer(Seq2SeqTrainer):
         if gen_kwargs is not None:
             self._gen_kwargs = gen_kwargs
 
-        print(f"OLoRATrainer __init__: 传入的 cl_finetuning_args: {self.cl_finetuning_args}")
+        debugprint(f"OLoRATrainer __init__: 传入的 cl_finetuning_args: {self.cl_finetuning_args}")
 
         if processor is not None:
             self.add_callback(SaveProcessorCallback(processor))
@@ -70,7 +70,7 @@ class OLoRATrainer(Seq2SeqTrainer):
         # Initialize O-LoRA
         self.use_olora = cl_finetuning_args.use_olora
         if self.use_olora:
-            print(f"OLoRATrainer __init__: O-LoRA 已启用, use_olora={self.use_olora}")
+            debugprint(f"OLoRATrainer __init__: O-LoRA 已启用, use_olora={self.use_olora}")
             self.olora = OLoRA(
                 model=self.model,
                 orthogonal_lambda=cl_finetuning_args.orthogonal_lambda,
@@ -82,19 +82,19 @@ class OLoRATrainer(Seq2SeqTrainer):
             )
             # Only try to load when prev_task_id is provided
             if cl_finetuning_args.prev_task_id:
-                print(f"OLoRATrainer __init__: 尝试加载 prev_task_id: {cl_finetuning_args.prev_task_id}")
+                debugprint(f"OLoRATrainer __init__: 尝试加载 prev_task_id: {cl_finetuning_args.prev_task_id}")
                 load_success = self.olora.load_prev_adapter(cl_finetuning_args.prev_task_id)
-                print(f"OLoRATrainer __init__: 加载 prev_task_id={cl_finetuning_args.prev_task_id} 的结果: {load_success}")
+                debugprint(f"OLoRATrainer __init__: 加载 prev_task_id={cl_finetuning_args.prev_task_id} 的结果: {load_success}")
                 if not load_success:
                     logger.warning_rank0("Failed to load previous task adapter.")
                     logger.warning_rank0("Training will continue but without orthogonal constraints.")
                     self.use_olora = False
-                    print(f"OLoRATrainer __init__: 加载失败，禁用 O-LoRA, use_olora={self.use_olora}")
+                    debugprint(f"OLoRATrainer __init__: 加载失败，禁用 O-LoRA, use_olora={self.use_olora}")
             else:
                 logger.info_rank0("No previous task ID provided. This seems to be the first task.")
-                print("OLoRATrainer __init__: 没有提供 prev_task_id，视为第一个任务。")
+                debugprint("OLoRATrainer __init__: 没有提供 prev_task_id，视为第一个任务。")
         else:
-            print(f"OLoRATrainer __init__: O-LoRA 未启用, use_olora={self.use_olora}")
+            debugprint(f"OLoRATrainer __init__: O-LoRA 未启用, use_olora={self.use_olora}")
 
         # Ensure O-LoRA state is consistent across processes
         if torch.distributed.is_initialized():
@@ -153,20 +153,20 @@ class OLoRATrainer(Seq2SeqTrainer):
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         from easycl.cl.distributed_utils import get_deepspeed_zero_stage, is_deepspeed_zero3_enabled
 
-        # Debug: Print the active adapter at the start of compute_loss
+        # Debug: debugprint the active adapter at the start of compute_loss
         active_adapter = "N/A"
         if hasattr(model, 'active_adapter'):
             active_adapter = model.active_adapter
         elif hasattr(model, 'active_adapters'): # Some PEFT versions might use plural
             active_adapter = model.active_adapters
-        print(f"OLoRATrainer compute_loss: Entering compute_loss. Active adapter(s): {active_adapter}")
+        debugprint(f"OLoRATrainer compute_loss: Entering compute_loss. Active adapter(s): {active_adapter}")
         # 注意：O-LoRA 实现中只使用 'default' adapter 进行损失计算，不再使用 'current' adapter
 
         # 检测是否是Zero-3或zero-2环境
         is_zero3 = is_deepspeed_zero3_enabled() or get_deepspeed_zero_stage(model) == 3
         is_zero2 = get_deepspeed_zero_stage(model) == 2
-        print(f"OLoRATrainer compute_loss: 检测到 Zero-3 环境: {is_zero3}")
-        print(f"OLoRATrainer compute_loss: 检测到 Zero-2 环境: {is_zero2}")
+        debugprint(f"OLoRATrainer compute_loss: 检测到 Zero-3 环境: {is_zero3}")
+        debugprint(f"OLoRATrainer compute_loss: 检测到 Zero-2 环境: {is_zero2}")
 
         # 初始化辅助损失变量
         orthogonal_loss = torch.tensor(0.0, device=self.args.device)
@@ -182,7 +182,7 @@ class OLoRATrainer(Seq2SeqTrainer):
         # 在Zero-3或zero-2环境下使用Forward Hooks计算辅助损失
         if self.use_olora and hasattr(self, 'olora') and self.olora is not None:
             if is_zero3 or is_zero2:
-                print(f"OLoRATrainer compute_loss: 在Zero-3或Zero-2环境下使用Forward Hooks计算辅助损失")
+                debugprint(f"OLoRATrainer compute_loss: 在Zero-3或Zero-2环境下使用Forward Hooks计算辅助损失")
 
                 # 创建钩子列表
                 hooks = []
@@ -194,40 +194,40 @@ class OLoRATrainer(Seq2SeqTrainer):
                     def orthogonal_hook_fn(module, inputs, outputs):
                         nonlocal orthogonal_loss, matched_weights_count
                         if hasattr(module, "lora_A") and hasattr(module.lora_A, "keys"):
-                            #print(f"orthogonal_hook_fn: 开始处理模块，可用的 lora_A keys: {list(module.lora_A.keys())}")
+                            #debugprint(f"orthogonal_hook_fn: 开始处理模块，可用的 lora_A keys: {list(module.lora_A.keys())}")
 
                             # 检查是否存在default adapter
                             if 'default' in module.lora_A:
                                 new_weight = module.lora_A['default'].weight
-                                #print(f"orthogonal_hook_fn: 获取到default adapter的权重，shape: {new_weight.shape}")
+                                #debugprint(f"orthogonal_hook_fn: 获取到default adapter的权重，shape: {new_weight.shape}")
 
                                 # 使用预先构建的映射获取规范化的模块路径
                                 module_path = module_to_path_map.get(module)
-                                #print(f"orthogonal_hook_fn: 原始模块在映射中的路径: {module_path}")
+                                #debugprint(f"orthogonal_hook_fn: 原始模块在映射中的路径: {module_path}")
 
                                 if module_path:
                                     merged_a_key = f"{module_path}.merged_A"
-                                    #print(f"orthogonal_hook_fn: 构建历史权重键: {merged_a_key}")
-                                    #print(f"orthogonal_hook_fn: 历史权重键列表前5个: {list(self.olora.merged_historical_weights.keys())[:5]}")
+                                    #debugprint(f"orthogonal_hook_fn: 构建历史权重键: {merged_a_key}")
+                                    #debugprint(f"orthogonal_hook_fn: 历史权重键列表前5个: {list(self.olora.merged_historical_weights.keys())[:5]}")
 
                                     if merged_a_key in self.olora.merged_historical_weights:
                                         old_weight = self.olora.merged_historical_weights[merged_a_key].to(new_weight.device)
-                                        #print(f"orthogonal_hook_fn: 获取到历史权重，shape: {old_weight.shape}")
+                                        #debugprint(f"orthogonal_hook_fn: 获取到历史权重，shape: {old_weight.shape}")
 
                                         if new_weight.shape[1] == old_weight.shape[1]:
                                             dot_product = torch.mm(new_weight, old_weight.T)
                                             curr_loss = torch.abs(dot_product).sum()
                                             orthogonal_loss += curr_loss
                                             matched_weights_count += 1  # 增加匹配计数
-                                            #print(f"orthogonal_hook_fn: 模块 {module_path} 计算正交损失成功: {curr_loss.item():.4f}")
+                                            #debugprint(f"orthogonal_hook_fn: 模块 {module_path} 计算正交损失成功: {curr_loss.item():.4f}")
                                         else:
-                                            print(f"orthogonal_hook_fn: 模块 {module_path} 权重维度不匹配 - 新权重: {new_weight.shape}, 历史权重: {old_weight.shape}")
+                                            debugprint(f"orthogonal_hook_fn: 模块 {module_path} 权重维度不匹配 - 新权重: {new_weight.shape}, 历史权重: {old_weight.shape}")
                                     else:
-                                        print(f"orthogonal_hook_fn: 未找到模块 {module_path} 的历史权重")
+                                        debugprint(f"orthogonal_hook_fn: 未找到模块 {module_path} 的历史权重")
                                 else:
-                                    print(f"orthogonal_hook_fn: 模块未在映射中找到对应路径")
+                                    debugprint(f"orthogonal_hook_fn: 模块未在映射中找到对应路径")
                             else:
-                                print(f"orthogonal_hook_fn: 模块中未找到'default' adapter")
+                                debugprint(f"orthogonal_hook_fn: 模块中未找到'default' adapter")
 
                     # 注册L2损失的Forward Hook
                     def l2_hook_fn(module, inputs, outputs):
@@ -273,8 +273,8 @@ class OLoRATrainer(Seq2SeqTrainer):
                 for h in hooks:
                     h.remove()
 
-                print(f"OLoRATrainer compute_loss: Zero-3环境下计算的 orthogonal_loss: {orthogonal_loss.item():.4f}, 成功匹配历史权重数量: {matched_weights_count}")
-                print(f"OLoRATrainer compute_loss: Zero-3环境下计算的 l2_loss: {l2_loss.item():.4f}")
+                debugprint(f"OLoRATrainer compute_loss: Zero-3环境下计算的 orthogonal_loss: {orthogonal_loss.item():.4f}, 成功匹配历史权重数量: {matched_weights_count}")
+                debugprint(f"OLoRATrainer compute_loss: Zero-3环境下计算的 l2_loss: {l2_loss.item():.4f}")
             else:
                 # 非Zero-3环境，使用原来的方式计算损失
                 outputs = model(**inputs)
@@ -283,23 +283,23 @@ class OLoRATrainer(Seq2SeqTrainer):
                 # 只有在历史权重加载时才计算正交损失
                 if self.olora.merged_historical_weights is not None:
                     orthogonal_loss = self.olora.compute_orthogonal_loss()
-                    print(f"OLoRATrainer compute_loss: 计算出的 orthogonal_loss: {orthogonal_loss.item():.4f}")
+                    debugprint(f"OLoRATrainer compute_loss: 计算出的 orthogonal_loss: {orthogonal_loss.item():.4f}")
                 else:
-                    print(f"OLoRATrainer compute_loss: 未加载历史权重，跳过 orthogonal_loss 计算。")
+                    debugprint(f"OLoRATrainer compute_loss: 未加载历史权重，跳过 orthogonal_loss 计算。")
 
                 # 计算当前adapter参数的L2损失
                 l2_loss = self.olora.compute_l2_loss()
-                print(f"OLoRATrainer compute_loss: 计算出的 l2_loss: {l2_loss.item():.4f}")
+                debugprint(f"OLoRATrainer compute_loss: 计算出的 l2_loss: {l2_loss.item():.4f}")
         else:
             # O-LoRA未启用，直接计算主任务损失
             outputs = model(**inputs)
             loss = outputs.loss
-            print(f"OLoRATrainer compute_loss: O-LoRA 未启用或未初始化，跳过 O-LoRA 损失计算。")
+            debugprint(f"OLoRATrainer compute_loss: O-LoRA 未启用或未初始化，跳过 O-LoRA 损失计算。")
 
         # 将辅助损失添加到主任务损失
         if self.use_olora and hasattr(self, 'olora') and self.olora is not None:
             loss = loss + orthogonal_loss + l2_loss
-            print(f"OLoRATrainer compute_loss: 添加 O-LoRA 损失后的总 loss: {loss.item():.4f}")
+            debugprint(f"OLoRATrainer compute_loss: 添加 O-LoRA 损失后的总 loss: {loss.item():.4f}")
 
             if return_outputs:
                 outputs.metrics = outputs.get("metrics", {})

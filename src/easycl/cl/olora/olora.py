@@ -58,13 +58,13 @@ class OLoRA:
         self.prev_task_id = prev_task_id
         self.merged_historical_weights: Optional[Dict[str, torch.Tensor]] = None
 
-        print(f"OLoRA __init__: 初始化参数:")
-        print(f"  - orthogonal_lambda: {self.orthogonal_lambda}")
-        print(f"  - l2_lambda: {self.l2_lambda}")
-        print(f"  - oloara_history_path: {self.olora_history_path}")
-        print(f"  - model_output_dir: {self.model_output_dir}")
-        print(f"  - device: {self.device}")
-        print(f"  - prev_task_id: {self.prev_task_id}")
+        debugprint(f"OLoRA __init__: 初始化参数:")
+        debugprint(f"  - orthogonal_lambda: {self.orthogonal_lambda}")
+        debugprint(f"  - l2_lambda: {self.l2_lambda}")
+        debugprint(f"  - oloara_history_path: {self.olora_history_path}")
+        debugprint(f"  - model_output_dir: {self.model_output_dir}")
+        debugprint(f"  - device: {self.device}")
+        debugprint(f"  - prev_task_id: {self.prev_task_id}")
 
         # Ensure history directory exists and load adapter history only on main process
         if is_main_process():
@@ -96,29 +96,29 @@ class OLoRA:
                     config=config
                 )
                 self.adapter_history.append(adapter_info)
-                print(f"_load_adapter_history: 加载到历史 adapter: {adapter_info}")
+                debugprint(f"_load_adapter_history: 加载到历史 adapter: {adapter_info}")
 
     def _validate_adapter_path(self, adapter_path: str) -> str:
         """Validate and normalize adapter path"""
-        print(f"_validate_adapter_path: 正在验证路径: {adapter_path}")
+        debugprint(f"_validate_adapter_path: 正在验证路径: {adapter_path}")
         adapter_path = os.path.abspath(adapter_path)
 
         if not os.path.exists(adapter_path):
-            print(f"_validate_adapter_path: 验证失败 - 路径不存在: {adapter_path}")
+            debugprint(f"_validate_adapter_path: 验证失败 - 路径不存在: {adapter_path}")
             raise ValueError(f"Adapter path does not exist: {adapter_path}")
 
         config_path = os.path.join(adapter_path, "adapter_config.json")
         model_path = os.path.join(adapter_path, "adapter_model.safetensors")
 
         if not os.path.exists(config_path):
-            print(f"_validate_adapter_path: 验证失败 - adapter_config.json 不存在于 {adapter_path}")
+            debugprint(f"_validate_adapter_path: 验证失败 - adapter_config.json 不存在于 {adapter_path}")
             raise ValueError(f"adapter_config.json not found in {adapter_path}")
 
         if not os.path.exists(model_path):
-            print(f"_validate_adapter_path: 验证失败 - adapter_model.safetensors 不存在于 {adapter_path}")
+            debugprint(f"_validate_adapter_path: 验证失败 - adapter_model.safetensors 不存在于 {adapter_path}")
             raise ValueError(f"adapter_model.safetensors not found in {adapter_path}")
 
-        print(f"_validate_adapter_path: 验证成功: {adapter_path}")
+        debugprint(f"_validate_adapter_path: 验证成功: {adapter_path}")
         return adapter_path
 
     def load_adapter_weights(self, task_id: str, base_path: Optional[str] = None) -> Dict[str, torch.Tensor]:
@@ -132,10 +132,10 @@ class OLoRA:
         if is_main_process():
             if base_path:
                 adapter_path = os.path.abspath(base_path)
-                print(f"load_adapter_weights: 尝试加载 task_id='{task_id}' 的权重，使用提供的 base_path: {adapter_path}")
+                debugprint(f"load_adapter_weights: 尝试加载 task_id='{task_id}' 的权重，使用提供的 base_path: {adapter_path}")
             else:
                 adapter_path = os.path.join(self.model_output_dir)
-                print(f"load_adapter_weights: 尝试加载 task_id='{task_id}' 的权重，使用默认路径 (model_output_dir): {adapter_path}")
+                debugprint(f"load_adapter_weights: 尝试加载 task_id='{task_id}' 的权重，使用默认路径 (model_output_dir): {adapter_path}")
 
             try:
                 # Note: _validate_adapter_path now receives the determined path
@@ -159,7 +159,7 @@ class OLoRA:
                 weight_keys = list(state_dict.keys())
                 logger.debug(f"Adapter weights in {task_id}: {weight_keys[:5]}...")
                 logger.debug(f"Total weights: {len(weight_keys)}")
-                print(f"load_adapter_weights: 从 {validated_path} 加载了 {len(weight_keys)} 个权重张量。示例 keys: {weight_keys[:3]}...")
+                debugprint(f"load_adapter_weights: 从 {validated_path} 加载了 {len(weight_keys)} 个权重张量。示例 keys: {weight_keys[:3]}...")
 
                 for key, value in state_dict.items():
                     # In PEFT format, weights are typically named as:
@@ -175,10 +175,10 @@ class OLoRA:
 
                 if not lora_weights:
                     logger.warning(f"No LoRA weights found in adapter: {task_id}")
-                    print(f"load_adapter_weights: 在 adapter '{task_id}' 中未找到 LoRA 权重。")
+                    debugprint(f"load_adapter_weights: 在 adapter '{task_id}' 中未找到 LoRA 权重。")
                 else:
                     logger.info(f"Loaded {len(lora_weights)} LoRA weights from adapter: {task_id}")
-                    print(f"load_adapter_weights: 成功加载 {len(lora_weights)} 个 LoRA 权重 (A/B matrices) from adapter: {task_id}")
+                    debugprint(f"load_adapter_weights: 成功加载 {len(lora_weights)} 个 LoRA 权重 (A/B matrices) from adapter: {task_id}")
 
             except Exception as e:
                 logger.error(f"Error loading adapter weights for task {task_id}: {str(e)}")
@@ -208,10 +208,10 @@ class OLoRA:
             merged_dir = os.path.join(adapter_dir, "merged")
             os.makedirs(merged_dir, exist_ok=True)
 
-            print(f"save_merged_adapter: 准备保存 adapter '{adapter_name}'")
-            print(f"  - 当前 adapter 目录 (源): {current_adapter_dir}")
-            print(f"  - 目标历史目录: {adapter_dir}")
-            print(f"  - 目标 merged 目录: {merged_dir}")
+            debugprint(f"save_merged_adapter: 准备保存 adapter '{adapter_name}'")
+            debugprint(f"  - 当前 adapter 目录 (源): {current_adapter_dir}")
+            debugprint(f"  - 目标历史目录: {adapter_dir}")
+            debugprint(f"  - 目标 merged 目录: {merged_dir}")
 
             try:
                 # Validate current adapter path
@@ -229,7 +229,7 @@ class OLoRA:
 
                     if is_first_task:
                         # First task: directly save current weights
-                        print("save_merged_adapter: 检测到是第一个任务。直接保存当前权重。")
+                        debugprint("save_merged_adapter: 检测到是第一个任务。直接保存当前权重。")
                         save_path = os.path.join(merged_dir, "merged_adapter.pt")
                         torch.save(current_weights, save_path)
 
@@ -245,24 +245,24 @@ class OLoRA:
                         ))
 
                         logger.info(f"Saved first task adapter weights to {save_path}")
-                        print(f"save_merged_adapter: 第一个任务的 adapter 权重已保存至 {save_path}")
+                        debugprint(f"save_merged_adapter: 第一个任务的 adapter 权重已保存至 {save_path}")
                         success = True
 
                     else:
                         # Subsequent tasks: load historical weights and concatenate
                         # Add check to prevent IndexError if history is empty for a subsequent task
-                        print(f"save_merged_adapter: 检测到是后续任务。前一个任务 ID: {self.prev_task_id}")
+                        debugprint(f"save_merged_adapter: 检测到是后续任务。前一个任务 ID: {self.prev_task_id}")
 
                         prev_merged_dir = os.path.join(self.olora_history_path, self.prev_task_id, "merged")
                         prev_path = os.path.join(prev_merged_dir, "merged_adapter.pt")
-                        print(f"save_merged_adapter: 尝试加载前一个任务的合并后权重: {prev_path}")
+                        debugprint(f"save_merged_adapter: 尝试加载前一个任务的合并后权重: {prev_path}")
 
                         if not os.path.exists(prev_path):
-                            print(f"save_merged_adapter: 错误 - 未找到前一个任务的合并权重文件: {prev_path}")
+                            debugprint(f"save_merged_adapter: 错误 - 未找到前一个任务的合并权重文件: {prev_path}")
                             raise ValueError(f"Previous merged adapter weights not found: {prev_path}")
 
                         prev_weights = torch.load(prev_path, map_location="cpu")
-                        print(f"save_merged_adapter: 成功加载前一个任务的合并权重，包含 {len(prev_weights)} 个张量。")
+                        debugprint(f"save_merged_adapter: 成功加载前一个任务的合并权重，包含 {len(prev_weights)} 个张量。")
 
                         # Merge weights (using concatenation)
                         merged_weights = {}
@@ -286,7 +286,7 @@ class OLoRA:
 
                         # Save merged weights to current task's merged subdirectory
                         save_path = os.path.join(merged_dir, "merged_adapter.pt")
-                        print(f"save_merged_adapter: 准备保存合并后的权重到: {save_path}")
+                        debugprint(f"save_merged_adapter: 准备保存合并后的权重到: {save_path}")
                         torch.save(merged_weights, save_path)
 
                         # Update adapter history
@@ -300,13 +300,13 @@ class OLoRA:
                         ))
 
                         logger.info(f"Saved concatenated adapter weights for task {adapter_name}")
-                        print(f"save_merged_adapter: 任务 '{adapter_name}' 的合并权重已保存。")
+                        debugprint(f"save_merged_adapter: 任务 '{adapter_name}' 的合并权重已保存。")
 
                         # Record dimension information for debugging
                         for key, value in merged_weights.items():
                             if "merged_A" in key or "merged_B" in key:
                                 logger.debug(f"Merged weight {key} shape: {value.shape}")
-                                print(f"save_merged_adapter: 合并权重 {key} 形状: {value.shape}")
+                                debugprint(f"save_merged_adapter: 合并权重 {key} 形状: {value.shape}")
 
                         success = True
 
@@ -336,17 +336,17 @@ class OLoRA:
         # Check if merged historical weights are loaded
         if not self.merged_historical_weights:
             logger.info("No merged historical weights loaded, skipping orthogonal loss calculation")
-            print("compute_orthogonal_loss: 未加载合并的历史权重，跳过正交损失计算。")
+            debugprint("compute_orthogonal_loss: 未加载合并的历史权重，跳过正交损失计算。")
             return torch.tensor(0.0, device=self.device)
 
-        print(f"compute_orthogonal_loss: 开始计算正交损失 (使用内存中的合并权重)")
+        debugprint(f"compute_orthogonal_loss: 开始计算正交损失 (使用内存中的合并权重)")
         orth_loss = torch.tensor(0.0, device=self.device)
         num_matrices = 0
         matched_weights_count = 0  # 添加计数器，记录成功匹配的历史权重数量
 
         # 获取DeepSpeed ZeRO阶段
         stage = get_deepspeed_zero_stage(self.model)
-        print(f"compute_orthogonal_loss: 检测到 DeepSpeed ZeRO Stage: {stage}")
+        debugprint(f"compute_orthogonal_loss: 检测到 DeepSpeed ZeRO Stage: {stage}")
 
         # 定义上下文管理器，在ZeRO-3下收集完整参数
         ctx = gather_parameters(self.model) if stage == 3 else nullcontext()
@@ -361,13 +361,13 @@ class OLoRA:
                     adapter_keys = module.lora_A.keys()
                     adapter_names.update(adapter_keys)
 
-        print(f"compute_orthogonal_loss: 在模型中找到的 adapter names: {adapter_names}")
+        debugprint(f"compute_orthogonal_loss: 在模型中找到的 adapter names: {adapter_names}")
         if 'default' not in adapter_names:
              logger.warning(f"'default' adapter not found. Found adapters: {adapter_names}. Skipping orthogonal loss.")
-             print("compute_orthogonal_loss: 未找到 'default' adapter，跳过正交损失计算。")
+             debugprint("compute_orthogonal_loss: 未找到 'default' adapter，跳过正交损失计算。")
              return torch.tensor(0.0, device=self.device)
 
-        print(f"compute_orthogonal_loss: 使用 'default' adapter 和内存中的合并历史权重进行计算。")
+        debugprint(f"compute_orthogonal_loss: 使用 'default' adapter 和内存中的合并历史权重进行计算。")
 
         # 在gather_parameters上下文中计算损失
         with ctx:
@@ -400,34 +400,34 @@ class OLoRA:
                             else:
                                  logger.warning(f"Dimension mismatch for orthogonal loss calculation in module {name}: "
                                                f"New A shape {new_weight.shape}, Historical A shape {old_weight.shape}. Skipping.")
-                                 print(f"compute_orthogonal_loss: 模块 {name} 维度不匹配，跳过。New: {new_weight.shape}, Hist: {old_weight.shape}")
+                                 debugprint(f"compute_orthogonal_loss: 模块 {name} 维度不匹配，跳过。New: {new_weight.shape}, Hist: {old_weight.shape}")
 
                         except Exception as e:
                             logger.warning(f"Error calculating orthogonal loss for {name}: {str(e)}")
                             logger.warning(f"Shapes: new={new_weight.shape}, old={old_weight.shape}")
-                            print(f"compute_orthogonal_loss: 计算模块 {name} 正交损失时出错: {e}")
+                            debugprint(f"compute_orthogonal_loss: 计算模块 {name} 正交损失时出错: {e}")
                     else:
                         # Log if a corresponding historical weight is missing
                         logger.debug(f"Historical weight key '{merged_a_key}' not found in merged_historical_weights for module {name}.")
-                        # print(f"compute_orthogonal_loss: 模块 {name} 的历史权重 key '{merged_a_key}' 未在 merged_historical_weights 中找到。")
+                        # debugprint(f"compute_orthogonal_loss: 模块 {name} 的历史权重 key '{merged_a_key}' 未在 merged_historical_weights 中找到。")
 
         if num_matrices == 0:
             logger.warning(f"No valid matrix pairs found for orthogonal loss calculation using 'default' adapter and historical weights.")
-            print(f"compute_orthogonal_loss: 未找到有效的矩阵对进行正交损失计算。")
+            debugprint(f"compute_orthogonal_loss: 未找到有效的矩阵对进行正交损失计算。")
 
         final_loss = self.orthogonal_lambda * orth_loss
-        print(f"compute_orthogonal_loss: 计算完成。参与计算的矩阵对数量: {num_matrices}, 成功匹配历史权重数量: {matched_weights_count}, 原始 orth_loss: {orth_loss.item():.4f}, 带 lambda ({self.orthogonal_lambda}) 的最终损失: {final_loss.item():.4f}")
+        debugprint(f"compute_orthogonal_loss: 计算完成。参与计算的矩阵对数量: {num_matrices}, 成功匹配历史权重数量: {matched_weights_count}, 原始 orth_loss: {orth_loss.item():.4f}, 带 lambda ({self.orthogonal_lambda}) 的最终损失: {final_loss.item():.4f}")
         return final_loss
 
     def compute_l2_loss(self) -> torch.Tensor:
         """Calculate L2 regularization loss for new LoRA parameters"""
-        print("compute_l2_loss: 开始计算 L2 正则化损失")
+        debugprint("compute_l2_loss: 开始计算 L2 正则化损失")
         l2_loss = torch.tensor(0.0, device=self.device)
         num_params = 0
 
         # 获取DeepSpeed ZeRO阶段
         stage = get_deepspeed_zero_stage(self.model)
-        print(f"compute_l2_loss: 检测到 DeepSpeed ZeRO Stage: {stage}")
+        debugprint(f"compute_l2_loss: 检测到 DeepSpeed ZeRO Stage: {stage}")
 
         # 定义上下文管理器，在ZeRO-3下收集完整参数
         ctx = gather_parameters(self.model) if stage == 3 else nullcontext()
@@ -445,17 +445,17 @@ class OLoRA:
         # If no adapters found, cannot calculate L2 loss
         if not adapter_names:
             logger.warning("No adapters found for L2 loss calculation")
-            print("compute_l2_loss: 未找到 adapters，无法计算 L2 损失。")
+            debugprint("compute_l2_loss: 未找到 adapters，无法计算 L2 损失。")
             return l2_loss
 
         # 检查是否存在default adapter
         if 'default' not in adapter_names:
             logger.warning("'default' adapter not found for L2 loss calculation")
             logger.warning(f"Available adapters: {adapter_names}")
-            print(f"compute_l2_loss: 未找到 'default' adapter。可用 adapters: {adapter_names}")
+            debugprint(f"compute_l2_loss: 未找到 'default' adapter。可用 adapters: {adapter_names}")
             return l2_loss
 
-        print(f"compute_l2_loss: 使用 'default' adapter 计算 L2 损失。")
+        debugprint(f"compute_l2_loss: 使用 'default' adapter 计算 L2 损失。")
 
         # 在gather_parameters上下文中计算L2损失
         with ctx:
@@ -481,20 +481,20 @@ class OLoRA:
                                 l2_loss = l2_loss + b_norm_sq
                                 num_params += 1
                                 logger.debug(f"Module {name} L2 squared norms: A={a_norm_sq.item():.4f}, B={b_norm_sq.item():.4f}")
-                                # print(f"compute_l2_loss: 模块 {name} - A 平方和: {a_norm_sq.item():.4f}, B 平方和: {b_norm_sq.item():.4f}")
+                                # debugprint(f"compute_l2_loss: 模块 {name} - A 平方和: {a_norm_sq.item():.4f}, B 平方和: {b_norm_sq.item():.4f}")
                         else:
                             logger.debug(f"Module {name} L2 squared norm: A={a_norm_sq.item():.4f} (B not found or missing adapter)")
-                            # print(f"compute_l2_loss: 模块 {name} - A 平方和: {a_norm_sq.item():.4f} (B 未找到或缺失)")
+                            # debugprint(f"compute_l2_loss: 模块 {name} - A 平方和: {a_norm_sq.item():.4f} (B 未找到或缺失)")
 
         if num_params > 0:
             # The loss is already the sum of squares, which is the standard L2 penalty term (before lambda)
             pass
         else:
             logger.warning(f"No parameters found for L2 loss with 'default' adapter")
-            print(f"compute_l2_loss: 未找到用于计算 L2 损失的参数 (adapter: 'default')")
+            debugprint(f"compute_l2_loss: 未找到用于计算 L2 损失的参数 (adapter: 'default')")
 
         final_loss = self.l2_lambda * l2_loss
-        print(f"compute_l2_loss: 计算完成。参与计算的参数数量: {num_params}, 原始 l2_loss: {l2_loss.item():.4f}, 带 lambda ({self.l2_lambda}) 的最终损失: {final_loss.item():.4f}")
+        debugprint(f"compute_l2_loss: 计算完成。参与计算的参数数量: {num_params}, 原始 l2_loss: {l2_loss.item():.4f}, 带 lambda ({self.l2_lambda}) 的最终损失: {final_loss.item():.4f}")
         return final_loss
 
     def load_prev_adapter(self, prev_task_id: str) -> bool:
@@ -513,7 +513,7 @@ class OLoRA:
         # If no prev_task_id provided, this is the first task
         if prev_task_id is None:
             logger.info(f"No previous task ID provided. This seems to be the first task.")
-            print(f"load_prev_adapter: prev_task_id 为 None，视为第一个任务。返回 False。")
+            debugprint(f"load_prev_adapter: prev_task_id 为 None，视为第一个任务。返回 False。")
             self.prev_task_id = None
             return False  # Cannot load previous if none exists
 
@@ -523,8 +523,8 @@ class OLoRA:
             merged_dir = os.path.join(self.olora_history_path, prev_task_id, "merged")
             merged_load_path = os.path.join(merged_dir, "merged_adapter.pt")
 
-            print(f"load_prev_adapter: 尝试加载 prev_task_id='{prev_task_id}' 的合并权重。")
-            print(f"  - 尝试路径: {merged_load_path}")
+            debugprint(f"load_prev_adapter: 尝试加载 prev_task_id='{prev_task_id}' 的合并权重。")
+            debugprint(f"  - 尝试路径: {merged_load_path}")
 
             temp_weights = None  # 临时存储加载的权重
 
@@ -533,22 +533,22 @@ class OLoRA:
                     # Load weights to CPU first to avoid potential GPU memory issues with large merged files
                     temp_weights = torch.load(merged_load_path, map_location="cpu")
                     logger.info(f"Successfully loaded {len(temp_weights)} merged historical weights from {merged_load_path} into memory.")
-                    print(f"load_prev_adapter: 成功从 {merged_load_path} 加载 {len(temp_weights)} 个合并权重到内存。")
+                    debugprint(f"load_prev_adapter: 成功从 {merged_load_path} 加载 {len(temp_weights)} 个合并权重到内存。")
                     # Log shapes of a few weights for debugging
                     keys_to_log = list(temp_weights.keys())[:3]
                     for key in keys_to_log:
                         if isinstance(temp_weights[key], torch.Tensor):
                             logger.debug(f"  - Loaded weight '{key}' shape: {temp_weights[key].shape}")
-                            print(f"  - 加载的权重 '{key}' 形状: {temp_weights[key].shape}")
+                            debugprint(f"  - 加载的权重 '{key}' 形状: {temp_weights[key].shape}")
                     load_success = True
                 except Exception as e:
                     logger.error(f"Error loading merged historical weights from {merged_load_path}: {str(e)}")
                     logger.error(f"Stack trace:", exc_info=True)
-                    print(f"load_prev_adapter: 从 {merged_load_path} 加载合并权重失败: {str(e)}。将尝试加载 safetensors。")
+                    debugprint(f"load_prev_adapter: 从 {merged_load_path} 加载合并权重失败: {str(e)}。将尝试加载 safetensors。")
 
                     # --- Fallback logic starts here ---
                     logger.warning(f"Could not load merged weights from {merged_load_path}. Trying adapter_model.safetensors for task '{prev_task_id}'.")
-                    print(f"load_prev_adapter: 尝试加载 task '{prev_task_id}' 的 adapter_model.safetensors。")
+                    debugprint(f"load_prev_adapter: 尝试加载 task '{prev_task_id}' 的 adapter_model.safetensors。")
                     prev_task_history_path = os.path.join(self.olora_history_path, prev_task_id)  # Define history path
                     try:
                         # Use load_adapter_weights which handles loading safetensors and converting keys
@@ -557,21 +557,21 @@ class OLoRA:
                         if safetensors_weights:
                             temp_weights = safetensors_weights
                             logger.info(f"Successfully loaded {len(safetensors_weights)} weights from adapter_model.safetensors in {prev_task_history_path} for task '{prev_task_id}' into memory.")
-                            print(f"load_prev_adapter: 成功从 {prev_task_history_path} 的 adapter_model.safetensors 加载 {len(safetensors_weights)} 个权重到内存。")
+                            debugprint(f"load_prev_adapter: 成功从 {prev_task_history_path} 的 adapter_model.safetensors 加载 {len(safetensors_weights)} 个权重到内存。")
                             # Log shapes of a few weights for debugging
                             keys_to_log = list(temp_weights.keys())[:3]
                             for key in keys_to_log:
                                 if isinstance(temp_weights[key], torch.Tensor):
                                     logger.debug(f"  - Loaded weight '{key}' shape: {temp_weights[key].shape}")
-                                    print(f"  - 加载的权重 '{key}' 形状: {temp_weights[key].shape}")
+                                    debugprint(f"  - 加载的权重 '{key}' 形状: {temp_weights[key].shape}")
                             load_success = True
                     except Exception as safetensors_e:
                         logger.error(f"Error loading adapter_model.safetensors for task '{prev_task_id}': {str(safetensors_e)}")
-                        print(f"load_prev_adapter: 加载 adapter_model.safetensors 时出错: {safetensors_e}")
+                        debugprint(f"load_prev_adapter: 加载 adapter_model.safetensors 时出错: {safetensors_e}")
                     # --- Fallback logic ends here ---
             else:
                 logger.warning(f"Merged historical adapter weights not found at {merged_load_path} for task '{prev_task_id}'. Trying adapter_model.safetensors.")
-                print(f"load_prev_adapter: 未找到任务 '{prev_task_id}' 的合并权重文件: {merged_load_path}。将尝试加载 safetensors。")
+                debugprint(f"load_prev_adapter: 未找到任务 '{prev_task_id}' 的合并权重文件: {merged_load_path}。将尝试加载 safetensors。")
                 # --- Fallback logic starts here ---
                 prev_task_history_path = os.path.join(self.olora_history_path, prev_task_id)  # Define history path
                 try:
@@ -581,67 +581,67 @@ class OLoRA:
                     if safetensors_weights:
                         temp_weights = safetensors_weights
                         logger.info(f"Successfully loaded {len(safetensors_weights)} weights from adapter_model.safetensors in {prev_task_history_path} for task '{prev_task_id}' into memory.")
-                        print(f"load_prev_adapter: 成功从 {prev_task_history_path} 的 adapter_model.safetensors 加载 {len(safetensors_weights)} 个权重到内存。")
+                        debugprint(f"load_prev_adapter: 成功从 {prev_task_history_path} 的 adapter_model.safetensors 加载 {len(safetensors_weights)} 个权重到内存。")
                         # Log shapes of a few weights for debugging
                         keys_to_log = list(temp_weights.keys())[:3]
                         for key in keys_to_log:
                             if isinstance(temp_weights[key], torch.Tensor):
                                 logger.debug(f"  - Loaded weight '{key}' shape: {temp_weights[key].shape}")
-                                print(f"  - 加载的权重 '{key}' 形状: {temp_weights[key].shape}")
+                                debugprint(f"  - 加载的权重 '{key}' 形状: {temp_weights[key].shape}")
                         load_success = True
                 except Exception as safetensors_e:
                     logger.error(f"Error loading adapter_model.safetensors for task '{prev_task_id}': {str(safetensors_e)}")
-                    print(f"load_prev_adapter: 加载 adapter_model.safetensors 时出错: {safetensors_e}")
+                    debugprint(f"load_prev_adapter: 加载 adapter_model.safetensors 时出错: {safetensors_e}")
                 # --- Fallback logic ends here ---
 
         # 广播加载状态和权重到所有进程
         rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
         world_size = dist.get_world_size() if dist.is_available() and dist.is_initialized() else 1
-        print(f"load_prev_adapter: [rank {rank}/{world_size-1}] 准备广播 load_success ({load_success}) 和权重。")
-        print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 准备广播 load_success ({load_success}) 和权重。")
+        debugprint(f"load_prev_adapter: [rank {rank}/{world_size-1}] 准备广播 load_success ({load_success}) 和权重。")
+        debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 准备广播 load_success ({load_success}) 和权重。")
 
         if dist.is_available() and dist.is_initialized():
             try:
                 # 首先同步所有进程，确保主进程已完成文件读取
-                print(f"load_prev_adapter: [rank {rank}/{world_size-1}] 即将进入第一个 barrier (确保主进程文件读取完成)")
-                print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 即将进入第一个 barrier (确保主进程文件读取完成)")
+                debugprint(f"load_prev_adapter: [rank {rank}/{world_size-1}] 即将进入第一个 barrier (确保主进程文件读取完成)")
+                debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 即将进入第一个 barrier (确保主进程文件读取完成)")
 
                 # 添加每个进程的状态打印
                 for i in range(world_size):
                     if rank == i:
-                        print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 正在等待进入第一个barrier")
+                        debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 正在等待进入第一个barrier")
 
                 dist.barrier()
 
-                print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 已通过第一个 barrier")
-                print(f"load_prev_adapter: [rank {rank}/{world_size-1}] 已通过第一个 barrier")
+                debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 已通过第一个 barrier")
+                debugprint(f"load_prev_adapter: [rank {rank}/{world_size-1}] 已通过第一个 barrier")
 
                 # 广播加载状态
-                print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 即将广播 load_success...")
-                print(f"load_prev_adapter: [rank {rank}/{world_size-1}] 即将广播 load_success...")
+                debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 即将广播 load_success...")
+                debugprint(f"load_prev_adapter: [rank {rank}/{world_size-1}] 即将广播 load_success...")
 
                 # 添加每个进程的状态打印
                 for i in range(world_size):
                     if rank == i:
-                        print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 准备广播/接收 load_success_tensor")
+                        debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 准备广播/接收 load_success_tensor")
 
                 load_success_tensor = torch.tensor(int(load_success), dtype=torch.int, device=self.device) # Use tensor for broadcast
                 dist.broadcast(load_success_tensor, src=0)
                 load_success = bool(load_success_tensor.item()) # Convert back to bool
 
-                print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 已完成广播/接收 load_success: {load_success}")
-                print(f"load_prev_adapter: [rank {rank}/{world_size-1}] 已完成广播/接收 load_success: {load_success}")
+                debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 已完成广播/接收 load_success: {load_success}")
+                debugprint(f"load_prev_adapter: [rank {rank}/{world_size-1}] 已完成广播/接收 load_success: {load_success}")
 
 
                 # 如果主进程成功加载了权重，则广播权重到所有进程
                 if load_success:
-                    print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] load_success 为 True，准备广播/接收权重...")
-                    print(f"load_prev_adapter: [rank {rank}/{world_size-1}] load_success 为 True，准备广播/接收权重...")
+                    debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] load_success 为 True，准备广播/接收权重...")
+                    debugprint(f"load_prev_adapter: [rank {rank}/{world_size-1}] load_success 为 True，准备广播/接收权重...")
 
                     # 添加每个进程的状态打印
                     for i in range(world_size):
                         if rank == i:
-                            print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 准备广播/接收权重对象")
+                            debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 准备广播/接收权重对象")
 
                     # Use torch.distributed primitives for broadcasting large objects if needed
                     # For simplicity, sticking with broadcast_object for now, but adding more logs
@@ -652,62 +652,62 @@ class OLoRA:
 
                         # 打印权重对象的大小信息
                         weights_size = sum(param.numel() * param.element_size() for param in self.merged_historical_weights.values() if isinstance(param, torch.Tensor)) / (1024 * 1024)
-                        print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] (主进程) 准备广播权重对象，大小约 {weights_size:.2f} MB...")
-                        print(f"load_prev_adapter: [rank {rank}/{world_size-1}] (主进程) 准备广播权重对象，大小约 {weights_size:.2f} MB...")
+                        debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] (主进程) 准备广播权重对象，大小约 {weights_size:.2f} MB...")
+                        debugprint(f"load_prev_adapter: [rank {rank}/{world_size-1}] (主进程) 准备广播权重对象，大小约 {weights_size:.2f} MB...")
 
-                        print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] (主进程) 开始广播权重对象...")
+                        debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] (主进程) 开始广播权重对象...")
                         dist.broadcast_object_list(broadcast_list, src=0)
-                        print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] (主进程) 已发送权重对象。")
-                        print(f"load_prev_adapter: [rank {rank}/{world_size-1}] (主进程) 已发送权重对象。")
+                        debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] (主进程) 已发送权重对象。")
+                        debugprint(f"load_prev_adapter: [rank {rank}/{world_size-1}] (主进程) 已发送权重对象。")
                     else:
-                        print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] (非主进程) 准备接收权重对象...")
-                        print(f"load_prev_adapter: [rank {rank}/{world_size-1}] (非主进程) 准备接收权重对象...")
+                        debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] (非主进程) 准备接收权重对象...")
+                        debugprint(f"load_prev_adapter: [rank {rank}/{world_size-1}] (非主进程) 准备接收权重对象...")
 
-                        print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] (非主进程) 开始接收权重对象...")
+                        debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] (非主进程) 开始接收权重对象...")
                         dist.broadcast_object_list(broadcast_list, src=0)
                         self.merged_historical_weights = broadcast_list[0]
                         weight_count = len(self.merged_historical_weights) if self.merged_historical_weights is not None else 0
 
-                        print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] (非主进程) 已接收权重对象，数量: {weight_count}。")
-                        print(f"load_prev_adapter: [rank {rank}/{world_size-1}] (非主进程) 已接收权重对象，数量: {weight_count}。")
+                        debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] (非主进程) 已接收权重对象，数量: {weight_count}。")
+                        debugprint(f"load_prev_adapter: [rank {rank}/{world_size-1}] (非主进程) 已接收权重对象，数量: {weight_count}。")
 
                 # 最后再次同步所有进程，确保所有进程都完成了权重加载/跳过
-                print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 即将进入最终 barrier (确保所有进程完成权重处理)")
-                print(f"load_prev_adapter: [rank {rank}/{world_size-1}] 即将进入最终 barrier (确保所有进程完成权重处理)")
+                debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 即将进入最终 barrier (确保所有进程完成权重处理)")
+                debugprint(f"load_prev_adapter: [rank {rank}/{world_size-1}] 即将进入最终 barrier (确保所有进程完成权重处理)")
 
                 # 添加每个进程的状态打印
                 for i in range(world_size):
                     if rank == i:
-                        print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 正在等待进入最终barrier")
+                        debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 正在等待进入最终barrier")
 
                 dist.barrier()
 
-                print(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 已通过最终 barrier")
-                print(f"load_prev_adapter: [rank {rank}/{world_size-1}] 已通过最终 barrier")
+                debugprint(f"[DEBUG] load_prev_adapter: [rank {rank}/{world_size-1}] 已通过最终 barrier")
+                debugprint(f"load_prev_adapter: [rank {rank}/{world_size-1}] 已通过最终 barrier")
 
             except Exception as e:
                 # 捕获任何异常，防止某个进程卡住
                 logger.error(f"[rank {rank}] Error in distributed communication during load_prev_adapter: {str(e)}", exc_info=True)
-                print(f"load_prev_adapter: [rank {rank}] 分布式通信出错: {str(e)}")
+                debugprint(f"load_prev_adapter: [rank {rank}] 分布式通信出错: {str(e)}")
                 # 尝试执行一次barrier，帮助其他进程解除阻塞，但要小心这本身也可能导致问题
                 try:
-                    print(f"load_prev_adapter: [rank {rank}] 错误处理中，尝试进入错误处理 barrier")
+                    debugprint(f"load_prev_adapter: [rank {rank}] 错误处理中，尝试进入错误处理 barrier")
                     dist.barrier()
-                    print(f"load_prev_adapter: [rank {rank}] 错误处理中，已通过错误处理 barrier")
+                    debugprint(f"load_prev_adapter: [rank {rank}] 错误处理中，已通过错误处理 barrier")
                 except Exception as barrier_e:
                     logger.error(f"[rank {rank}] Error during error handling barrier in load_prev_adapter: {str(barrier_e)}", exc_info=True)
-                    print(f"load_prev_adapter: [rank {rank}] 错误处理 barrier 出错: {str(barrier_e)}")
+                    debugprint(f"load_prev_adapter: [rank {rank}] 错误处理 barrier 出错: {str(barrier_e)}")
                 # 设置加载失败
                 load_success = False
                 self.merged_historical_weights = None
 
         else:
             # 非分布式环境，直接设置权重
-             print(f"load_prev_adapter: [rank {rank}] 非分布式环境。")
+             debugprint(f"load_prev_adapter: [rank {rank}] 非分布式环境。")
              if is_main_process() and load_success:
                  self.merged_historical_weights = temp_weights
 
-        print(f"load_prev_adapter: [rank {rank}] 函数即将返回 load_success: {load_success}")
+        debugprint(f"load_prev_adapter: [rank {rank}] 函数即将返回 load_success: {load_success}")
         return load_success
 
     def init_new_adapter(self, adapter_name: str):
@@ -722,7 +722,7 @@ class OLoRA:
 
         保留此函数仅为了向后兼容，始终返回 True。
         """
-        print(f"setup_adapters: 此函数已被弃用，不再创建 'current' adapter。所有计算只使用 'default' adapter。")
+        debugprint(f"setup_adapters: 此函数已被弃用，不再创建 'current' adapter。所有计算只使用 'default' adapter。")
         logger.info_rank0("setup_adapters function is deprecated. All calculations now use only the 'default' adapter.")
 
         # 添加同步屏障确保所有进程同步
