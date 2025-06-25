@@ -87,6 +87,10 @@ class LWF:
             # Ensure input data is on the correct device
             inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
 
+            # Create a copy of inputs without 'index' for model forward pass
+            model_inputs = {k: v for k, v in inputs.items() if k != "index"}
+            debugprint(f"[rank {self.rank}] Removed 'index' from inputs for previous model forward pass")
+
             # 在ZeRO-3下，需要使用gather_parameters上下文管理器访问模型参数
             # 对于previous_task_model，我们需要确保在forward过程中能够访问完整参数
             if self.zero_stage == 3 and hasattr(self.previous_task_model, 'parameters'):
@@ -94,12 +98,12 @@ class LWF:
                 # 使用gather_parameters上下文管理器
                 with gather_parameters(self.previous_task_model):
                     with torch.no_grad():
-                        previous_outputs = self.previous_task_model(**inputs)
+                        previous_outputs = self.previous_task_model(**model_inputs)
                         previous_logits = previous_outputs.logits
             else:
                 # 其他情况下直接前向传播
                 with torch.no_grad():
-                    previous_outputs = self.previous_task_model(**inputs)
+                    previous_outputs = self.previous_task_model(**model_inputs)
                     previous_logits = previous_outputs.logits
 
             # Ensure logits shapes match
@@ -279,16 +283,21 @@ class LWF:
                     continue
 
                 debugprint(f"[rank {self.rank}] Batch {batch_idx} performing forward pass...") # Add this line
+                
+                # Create a copy of batch without 'index' for model forward pass
+                model_batch = {k: v for k, v in batch.items() if k != "index"}
+                debugprint(f"[rank {self.rank}] Removed 'index' from batch for model forward pass")
+                
                 # Forward pass - 在ZeRO-3下使用自定义的 gather_parameters
                 try:
                     if self.zero_stage == 3:
                         debugprint(f"[rank {self.rank}] Using gather_parameters utility for forward pass (ZeRO-3)")
                         # Revert back to using the gather_parameters function from distributed_utils
                         with gather_parameters(self.previous_task_model):
-                            outputs = self.previous_task_model(**batch)
+                            outputs = self.previous_task_model(**model_batch)
                     else:
                         debugprint(f"[rank {self.rank}] Performing direct forward pass (ZeRO < 3)")
-                        outputs = self.previous_task_model(**batch)
+                        outputs = self.previous_task_model(**model_batch)
                     debugprint(f"[rank {self.rank}] Batch {batch_idx} forward pass completed.")
                 except Exception as e:
                     debugprint(f"[rank {self.rank}] Error during forward pass for batch {batch_idx}: {e}")
