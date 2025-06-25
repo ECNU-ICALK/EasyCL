@@ -1,7 +1,7 @@
 import os
 import torch
 import torch.nn.functional as F
-from typing import Dict, Any, Optional, List, Union
+from typing import TYPE_CHECKING, Dict, Any, Optional, List, Union
 from dataclasses import dataclass
 
 from llamafactory.train.sft.trainer import CustomSeq2SeqTrainer
@@ -12,6 +12,9 @@ from easycl.hparams import CLFinetuningArguments
 def debugprint(*args, **kwargs):
     pass
 
+if TYPE_CHECKING:
+    from transformers import ProcessorMixin
+
 logger = get_logger(__name__)
 
 
@@ -19,23 +22,36 @@ class DynamicConPetTrainer(CustomSeq2SeqTrainer):
     """
     Dynamic ConPet trainer with dataset classification head training capability
     """
-    def __init__(self, processor=None, *args, **kwargs):
+    def __init__(
+        self,
+        finetuning_args,
+        cl_finetuning_args,
+        processor: Optional["ProcessorMixin"] = None,
+        gen_kwargs: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ):
         """Initialize Dynamic ConPet Trainer"""
         debugprint("开始初始化 DynamicConPetTrainer")
+        
         # Extract required parameters from kwargs
         self.dataset_classifier = kwargs.pop('dataset_classifier', None)
         self.dataset_names = kwargs.pop('dataset_names', [])
         self.dataset_indices_map = kwargs.pop('dataset_indices_map', {})
 
-        # Get cl_finetuning_args
-        self.cl_finetuning_args = kwargs.pop("cl_finetuning_args", None)
+        # Store cl_finetuning_args
+        self.cl_finetuning_args = cl_finetuning_args
         debugprint(f"获取到的 cl_finetuning_args: {self.cl_finetuning_args}")
 
         # Read classification loss weight from args, default to 1.0
         self.classification_loss_weight = getattr(self.cl_finetuning_args, "classification_loss_weight", 1.0)
         debugprint(f"分类损失权重设置为: {self.classification_loss_weight} (来自 cl_finetuning_args 或默认为 1.0)")
 
-        super().__init__(*args, processor=processor, **kwargs)
+        super().__init__(
+            finetuning_args=finetuning_args,
+            processor=processor,
+            gen_kwargs=gen_kwargs,
+            **kwargs
+        )
 
         # Log classifier information
         if self.dataset_classifier is not None:
