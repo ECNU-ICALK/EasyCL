@@ -323,12 +323,11 @@ def select_adapter(
                 # 对批次中的每个样本使用默认Adapter（第一个可用的）
                 default_task_id = list(task_to_adapter.keys())[0]
                 default_adapter_relative_path = task_to_adapter[default_task_id]
-                default_adapter_full_path = os.path.join(multi_adapter_dir, default_adapter_relative_path)
                 
                 for i in range(min(batch_size, len(samples) - sample_idx)):
                     current_idx = sample_idx + i
                     if current_idx < len(samples):
-                        adapter_assignments[default_task_id]["path"] = default_adapter_full_path
+                        adapter_assignments[default_task_id]["path"] = default_adapter_relative_path
                         adapter_assignments[default_task_id]["indices"].append(current_idx)
                 
                 sample_idx += min(batch_size, len(samples) - sample_idx)
@@ -394,10 +393,9 @@ def select_adapter(
                     best_task_id = list(task_to_adapter.keys())[0]
                     logger.warning(f"Sample {sample_idx} could not find the best task, using default task: {best_task_id}")
                     
-                # 记录样本到任务的分配 - 使用完整路径而不是相对路径
+                # 记录样本到任务的分配 - 使用相对路径以与evaluator兼容
                 adapter_relative_path = task_to_adapter[best_task_id]
-                adapter_full_path = os.path.join(multi_adapter_dir, adapter_relative_path)
-                adapter_assignments[best_task_id]["path"] = adapter_full_path
+                adapter_assignments[best_task_id]["path"] = adapter_relative_path
                 adapter_assignments[best_task_id]["indices"].append(sample_idx)
                 
                 sample_idx += 1
