@@ -177,7 +177,11 @@ class GEMSeq2SeqTrainer(CustomSeq2SeqTrainer):
 
         # Separate inputs
         # Ensure we handle metadata columns gracefully (like 'is_memory')
-        current_inputs = {k: v[current_mask] for k, v in inputs.items() if isinstance(v, torch.Tensor)}
+        current_inputs = {
+            k: v[current_mask] 
+            for k, v in inputs.items() 
+            if k != "is_memory" and isinstance(v, torch.Tensor) and v.shape[0] == inputs["is_memory"].shape[0]
+        }
         debugprint(f"[RANK {rank}] GEM compute_loss: 分离出当前任务输入, 键: {list(current_inputs.keys())}") # Debug print for separated current inputs
 
         # Step 1: Compute current task loss and potentially outputs
@@ -210,7 +214,11 @@ class GEMSeq2SeqTrainer(CustomSeq2SeqTrainer):
             return (loss_current, outputs_current) if return_outputs else loss_current
 
         # Step 3: Compute memory loss and gradient (only if memory samples exist)
-        memory_inputs = {k: v[memory_mask] for k, v in inputs.items() if isinstance(v, torch.Tensor)}
+        memory_inputs = {
+            k: v[memory_mask] 
+            for k, v in inputs.items() 
+            if k != "is_memory" and isinstance(v, torch.Tensor) and v.shape[0] == inputs["is_memory"].shape[0]
+        }
         debugprint(f"[RANK {rank}] GEM compute_loss: 分离出记忆任务输入, 键: {list(memory_inputs.keys())}") # Debug print for separated memory inputs
         loss_memory = super().compute_loss(model, memory_inputs, return_outputs=False)
         debugprint(f"[RANK {rank}] GEM compute_loss: 计算得到记忆任务损失: {loss_memory.item() if isinstance(loss_memory, torch.Tensor) else loss_memory}") # Debug print after memory loss calc
