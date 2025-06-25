@@ -470,8 +470,13 @@ class CLCommandGenerator:
         # 6. Ensure necessary base parameters exist (stage, do_train)
         args.setdefault("stage", "sft")
         args.setdefault("do_train", True)
+        
+        # 7. Ensure media_dir is set to be consistent with dataset_dir if not already set
+        if "dataset_dir" in args and "media_dir" not in args:
+            args["media_dir"] = args["dataset_dir"]
+            logger.info_rank0(f"Task {task_id}: Setting media_dir={args['media_dir']} to match dataset_dir")
 
-        # 7. Convert to command string
+        # 8. Convert to command string
         # Make sure 'cl_method' itself is not passed as a command line arg if it was just for internal logic
         args_for_cli = args.copy()
         # args_for_cli.pop("cl_method", None) # Keep cl_method if needed by run_exp downstream? Check run_exp usage. Assuming run_exp doesn't need it directly as CLI arg.
@@ -519,6 +524,11 @@ class CLCommandGenerator:
         args.pop("enable_transfer", None)
         args.pop("enable_bwt", None)
         args.pop("enable_fwt", None)
+
+        # 确保media_dir与dataset_dir一致，特别是在benchmark模式下
+        if "dataset_dir" in self.train_kwargs and "media_dir" not in args:
+            args["media_dir"] = self.train_kwargs["dataset_dir"]
+            logger.info_rank0(f"Evaluation: Setting media_dir={args['media_dir']} to match train dataset_dir")
 
         # 移除不需要的参数 (注释或None值)
         for key in list(args.keys()):

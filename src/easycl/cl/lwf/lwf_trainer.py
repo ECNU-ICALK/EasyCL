@@ -166,8 +166,11 @@ class LWFTrainer(Seq2SeqTrainer):
         #         outputs = model(**inputs)
         # else:
         #     outputs = model(**inputs)
-        outputs = model(**inputs) # Directly call model forward pass
+        
+        # Create a copy of inputs for model forwarding, excluding 'index'
+        model_inputs = {key: value for key, value in inputs.items() if key != 'index'}
 
+        outputs = model(**model_inputs) # Directly call model forward pass
         loss = outputs.loss
 
         # If LWF is enabled, add LWF loss

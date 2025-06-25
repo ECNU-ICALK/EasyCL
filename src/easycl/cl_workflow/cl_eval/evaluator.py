@@ -549,7 +549,9 @@ class CLEvalEvaluator(BaseEvaluator):
             # 创建adapter到样本的分组
             adapter_to_examples = defaultdict(list)
             adapter_to_indices = defaultdict(list)
-            adapter_names = defaultdict(str)
+            
+            # 反向映射，用于从路径获取名称以进行日志记录
+            path_to_adapter_name = {v: k for k, v in self.adapter_paths.items()}
             
             # 根据配置将样本分配到对应的adapter
             for i, example in enumerate(batch):
@@ -561,38 +563,32 @@ class CLEvalEvaluator(BaseEvaluator):
                     # 如果样本没有索引，可以使用默认adapter或跳过
                     continue
                 
-                # 查找样本对应的adapter
-                adapter_name = self.index_to_adapter.get(global_idx)
-                if adapter_name is None:
+                # 直接从 index_to_adapter 获取 adapter 绝对路径
+                adapter_path = self.index_to_adapter.get(global_idx)
+                if adapter_path is None:
                     print(f"警告: 样本索引 {global_idx} 未在配置中找到对应的adapter，跳过评估")
                     continue
-                
-                # 获取adapter路径
-                adapter_path = self.adapter_paths.get(adapter_name)
-                if not adapter_path:
-                    logger.error(f"Adapter '{adapter_name}' not found in adapter_paths mapping. Available adapters: {list(self.adapter_paths.keys())}") # English log
-                    continue
-                
+
                 # 将样本添加到对应adapter组
                 adapter_to_examples[adapter_path].append(example)
                 adapter_to_indices[adapter_path].append(i)
-                adapter_names[adapter_path] = adapter_name  # 保存adapter名称用于日志
-            
+
             # 打印分组信息
             print(f"\n样本按adapter分组情况:")
-            for adapter_path in adapter_to_examples:
-                print(f"  - Adapter '{adapter_names[adapter_path]}': {len(adapter_to_examples[adapter_path])} 个样本")
+            for adapter_path, examples in adapter_to_examples.items():
+                adapter_name = path_to_adapter_name.get(adapter_path, "unknown_adapter")
+                print(f"  - Adapter '{adapter_name}': {len(examples)} 个样本")
             
             # 预分配结果列表，确保结果顺序与输入一致
             outputs = [{"prediction": "", "is_correct": False, "match_type": "not_processed"}] * len(batch)
             
             # 获取所有adapter路径并按名称排序，确保顺序一致
             sorted_adapter_paths = sorted(adapter_to_examples.keys(), 
-                                         key=lambda path: adapter_names[path])
+                                         key=lambda path: path_to_adapter_name.get(path, "unknown_adapter"))
             
             print(f"\n按顺序处理 {len(sorted_adapter_paths)} 个adapter:")
             for i, adapter_path in enumerate(sorted_adapter_paths):
-                adapter_name = adapter_names[adapter_path]
+                adapter_name = path_to_adapter_name.get(adapter_path, "unknown_adapter")
                 print(f"\n[{i+1}/{len(sorted_adapter_paths)}] 处理adapter: {adapter_name}")
                 
                 examples = adapter_to_examples[adapter_path]

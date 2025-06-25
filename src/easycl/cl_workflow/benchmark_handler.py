@@ -136,12 +136,16 @@ class BenchmarkHandler:
 
         # --- Override Training Path ---
         modified_train_kwargs['dataset_dir'] = self.benchmark_dir
+        modified_train_kwargs['media_dir'] = self.benchmark_dir
         logger.info(f"Overriding 'dataset_dir' for training to: {self.benchmark_dir}")
+        logger.info(f"Overriding 'media_dir' for training to: {self.benchmark_dir}")
 
         # --- Override Evaluation Paths ---
         # Set task_dir to the benchmark root. CLEvalEvaluator will handle subdirs.
         modified_eval_kwargs['task_dir'] = self.benchmark_dir
+        modified_eval_kwargs['media_dir'] = self.benchmark_dir
         logger.info(f"Setting 'task_dir' for evaluation to benchmark root: {self.benchmark_dir}")
+        logger.info(f"Setting 'media_dir' for evaluation to benchmark root: {self.benchmark_dir}")
 
         # --- Add Benchmark Markers ---
         modified_eval_kwargs['is_benchmark_mode'] = True

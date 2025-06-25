@@ -45,9 +45,9 @@ def run_sft_gem(
 ):
     debugprint("GEM run_sft_gem: 函数入口") # Debug print at function start
     # Load tokenizer and model
+    # Load tokenizer and dataset (only need once)
     tokenizer_module = load_tokenizer(model_args)
     tokenizer = tokenizer_module["tokenizer"]
-    processor = tokenizer_module.get("processor", None) # Get processor, default to None if not found
     template = get_template_and_fix_tokenizer(tokenizer, data_args)
 
     # Log replay settings
@@ -318,10 +318,13 @@ def run_sft_gem(
     # Initialize data collator
     data_collator = SFTDataCollatorWith4DAttentionMask(
         template=template,
-        tokenizer=tokenizer,
         model=model if not training_args.predict_with_generate else None,
-        pad_to_multiple_of=8 if training_args.do_train else None,
-        label_pad_token_id=IGNORE_INDEX if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id
+        pad_to_multiple_of=8 if training_args.do_train else None,  # for shift short attention
+        label_pad_token_id=IGNORE_INDEX if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id,
+        block_diag_attn=model_args.block_diag_attn,
+        attn_implementation=getattr(model.config, "_attn_implementation", None),
+        compute_dtype=model_args.compute_dtype,
+        **tokenizer_module,
     )
     debugprint("GEM run_sft_gem: 数据整理器 (Data Collator) 初始化完成") # Debug print after collator init
 
@@ -359,11 +362,10 @@ def run_sft_gem(
         args=training_args,
         finetuning_args=finetuning_args,
         cl_finetuning_args=cl_finetuning_args,
-        tokenizer=tokenizer,
-        processor=processor, # Pass the processor here
         data_collator=data_collator,
         callbacks=callbacks,
         **dataset_module,
+        **tokenizer_module,
         **metric_kwargs
     )
     debugprint("GEM run_sft_gem: GEMSeq2SeqTrainer 初始化完成") # Debug print after trainer init

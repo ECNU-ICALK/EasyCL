@@ -691,6 +691,20 @@ def run_sft_dynamic_conpet(
     current_callbacks_task = copy.deepcopy(callbacks) if callbacks is not None else []
     debugprint(f"使用的回调函数数量 (任务适配器): {len(current_callbacks_task)}")
 
+    # Remove 'index' column from dataset for task-specific adapter training
+    # The 'index' column was added for dataset classification in shared adapter training,
+    # but CustomSeq2SeqTrainer doesn't handle it, causing "unexpected keyword argument 'index'" error
+    dataset_module_task = copy.deepcopy(dataset_module)
+    for dataset_key in ["train_dataset", "eval_dataset", "test_dataset"]:
+        if dataset_key in dataset_module_task and dataset_module_task[dataset_key] is not None:
+            dataset = dataset_module_task[dataset_key]
+            if "index" in dataset.column_names:
+                debugprint(f"为任务适配器训练移除 {dataset_key} 中的 'index' 列，避免传递给模型时出错")
+                dataset_module_task[dataset_key] = dataset.remove_columns(["index"])
+                debugprint(f"任务适配器 {dataset_key} 列名 (移除index后): {dataset_module_task[dataset_key].column_names}")
+            else:
+                debugprint(f"任务适配器 {dataset_key} 中未找到 'index' 列，无需移除")
+
     # Initialize Trainer for task-specific adapter (standard trainer, no classifier needed here)
     debugprint("初始化 CustomSeq2SeqTrainer (任务适配器训练)")
     trainer = CustomSeq2SeqTrainer(
@@ -700,7 +714,7 @@ def run_sft_dynamic_conpet(
         data_collator=data_collator,
         callbacks=current_callbacks_task,
         gen_kwargs=gen_kwargs,
-        **dataset_module,
+        **dataset_module_task,
         **tokenizer_module,
         **metric_module_task,
     )
@@ -715,7 +729,7 @@ def run_sft_dynamic_conpet(
 
         if finetuning_args_task.include_effective_tokens_per_second:
             train_result.metrics["effective_tokens_per_sec"] = calculate_tps(
-                dataset_module["train_dataset"], train_result.metrics, stage="sft"
+                dataset_module_task["train_dataset"], train_result.metrics, stage="sft"
             )
             debugprint(f"计算得到的有效每秒 token 数 (任务适配器): {train_result.metrics['effective_tokens_per_sec']}")
 
@@ -772,7 +786,7 @@ def run_sft_dynamic_conpet(
     # Generate predictions with task-specific adapter
     if training_args_task.do_predict:
         debugprint("警告: 批量生成可能非常慢。考虑使用 `scripts/vllm_infer.py` 代替。(rank0)")
-        eval_dataset_for_predict = dataset_module.get("eval_dataset", dataset_module.get("test_dataset"))
+        eval_dataset_for_predict = dataset_module_task.get("eval_dataset", dataset_module_task.get("test_dataset"))
         if eval_dataset_for_predict:
             debugprint(f"开始使用任务特定适配器在大小为 {len(eval_dataset_for_predict)} 的数据集上生成预测")
             predict_results = trainer.predict(eval_dataset_for_predict, metric_key_prefix="predict", **gen_kwargs)

@@ -306,7 +306,9 @@ def run_sft_lwf(
 
             # Ensure model parameters can be accessed correctly (DeepSpeed handles this for the forward pass)
             # Remove explicit gather_parameters as it causes issues after training loop
-            outputs = trainer.model(**batch) # Directly call model forward pass
+            # Create a copy of batch for model forwarding, excluding 'index'
+            model_batch = {key: value for key, value in batch.items() if key != 'index'}
+            outputs = trainer.model(**model_batch) # Directly call model forward pass
 
             # Use cached logits if available
             if len(trainer.lwf.cached_logits) > 0:

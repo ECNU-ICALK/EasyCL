@@ -11,7 +11,7 @@ from llamafactory.extras import logging
 from llamafactory.extras.constants import V_HEAD_SAFE_WEIGHTS_NAME, V_HEAD_WEIGHTS_NAME
 from llamafactory.extras.misc import infer_optim_dtype
 from llamafactory.extras.packages import is_ray_available
-from llamafactory.hparams import get_infer_args, get_ray_args, get_train_args, read_args
+from llamafactory.hparams import get_infer_args, get_ray_args, read_args
 from llamafactory.model import load_model, load_tokenizer
 from llamafactory.train.callbacks import LogCallback, PissaConvertCallback, ReporterCallback
 from llamafactory.train.dpo import run_dpo
@@ -483,5 +483,4 @@ def export_model(args: Optional[Dict[str, Any]] = None) -> None:
     with open(os.path.join(model_args.export_dir, "Modelfile"), "w", encoding="utf-8") as f:
         f.write(template.get_ollama_modelfile(tokenizer))
         logger.info_rank0(f"Saved ollama modelfile to {model_args.export_dir}.")
-
 

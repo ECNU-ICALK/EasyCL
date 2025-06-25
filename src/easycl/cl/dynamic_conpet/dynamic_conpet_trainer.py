@@ -76,6 +76,9 @@ class DynamicConPetTrainer(CustomSeq2SeqTrainer):
         dataset_labels = inputs.pop("dataset_labels", None)
         debugprint(f"进程 rank={rank} 提取到的 dataset_labels: {dataset_labels}")
 
+        # Remove 'index' from inputs before passing to model
+        inputs.pop("index", None)
+
         # Call original loss computation
         debugprint(f"进程 rank={rank} 调用原始模型的损失计算")
         original_outputs = model(**inputs, output_hidden_states=True)
