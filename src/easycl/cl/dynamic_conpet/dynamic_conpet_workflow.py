@@ -488,14 +488,12 @@ def run_sft_dynamic_conpet(
             cl_finetuning_args=cl_finetuning_args,
             data_collator=data_collator,
             callbacks=current_callbacks,
-            
             dataset_classifier=dataset_classifier,
             dataset_names=dataset_names,
             dataset_indices_map=dataset_indices_map_for_trainer,
             gen_kwargs=gen_kwargs,
-            train_dataset=dataset_module.get("train_dataset"),
-            eval_dataset=dataset_module.get("eval_dataset"),
-            tokenizer=tokenizer,
+            **dataset_module,
+            **tokenizer_module,
             **metric_module,
         )
         debugprint("使用 DynamicConPetTrainer 并进行数据集分类 (rank0)")
@@ -507,11 +505,9 @@ def run_sft_dynamic_conpet(
             finetuning_args=finetuning_args_shared,
             data_collator=data_collator,
             callbacks=current_callbacks,
-            
             gen_kwargs=gen_kwargs,
-            train_dataset=dataset_module.get("train_dataset"),
-            eval_dataset=dataset_module.get("eval_dataset"),
-            tokenizer=tokenizer,
+            **dataset_module,
+            **tokenizer_module,
             **metric_module,
         )
         debugprint("使用标准的 CustomSeq2SeqTrainer (rank0)")
@@ -703,11 +699,9 @@ def run_sft_dynamic_conpet(
         finetuning_args=finetuning_args_task,
         data_collator=data_collator,
         callbacks=current_callbacks_task,
-        
         gen_kwargs=gen_kwargs,
-        train_dataset=dataset_module.get("train_dataset"),
-        eval_dataset=dataset_module.get("eval_dataset"),
-        tokenizer=tokenizer,
+        **dataset_module,
+        **tokenizer_module,
         **metric_module_task,
     )
 
