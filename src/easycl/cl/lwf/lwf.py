@@ -181,7 +181,7 @@ class LWF:
         self.enabled = True
 
     def clear_cached_logits(self):
-        """Clear all cached logits to free memory"""
+        """Clear all cached logits to free memory with distributed training support"""
         if hasattr(self, 'cached_logits') and self.cached_logits:
             num_cleared = len(self.cached_logits)
             self.cached_logits.clear()
@@ -192,6 +192,22 @@ class LWF:
             if self.is_main:
                 logger.info("No cached logits to clear")
             debugprint(f"[rank {self.rank}] No cached logits to clear")
+
+        # Force garbage collection and clear CUDA cache for thorough memory cleanup
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        debugprint(f"[rank {self.rank}] Performed garbage collection and CUDA cache cleanup")
+
+        # 在分布式环境中，确保所有进程都完成了清空操作
+        if self.is_distributed:
+            debugprint(f"[rank {self.rank}] Reached barrier before exiting clear_cached_logits.")
+            import torch.distributed as dist
+            dist.barrier()
+            debugprint(f"[rank {self.rank}] Passed barrier after clear_cached_logits.")
+            if self.is_main:
+                logger.info("All processes have completed clearing cached logits.")
 
     def set_logits_dir(self, output_dir: str):
         """Set the directory for LWF (kept for compatibility)"""
