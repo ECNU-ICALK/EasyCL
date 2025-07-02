@@ -172,11 +172,26 @@ class LWF:
         logger.info("Disabling LWF...")
         self.enabled = False
         self.previous_task_model = None
+        # Clear cached logits to free memory
+        self.clear_cached_logits()
 
     def enable(self):
         """Enable LWF"""
         logger.info("Enabling LWF...")
         self.enabled = True
+
+    def clear_cached_logits(self):
+        """Clear all cached logits to free memory"""
+        if hasattr(self, 'cached_logits') and self.cached_logits:
+            num_cleared = len(self.cached_logits)
+            self.cached_logits.clear()
+            if self.is_main:
+                logger.info(f"Cleared {num_cleared} cached logits to free memory")
+            debugprint(f"[rank {self.rank}] Cleared {num_cleared} cached logits to free memory")
+        else:
+            if self.is_main:
+                logger.info("No cached logits to clear")
+            debugprint(f"[rank {self.rank}] No cached logits to clear")
 
     def set_logits_dir(self, output_dir: str):
         """Set the directory for LWF (kept for compatibility)"""
