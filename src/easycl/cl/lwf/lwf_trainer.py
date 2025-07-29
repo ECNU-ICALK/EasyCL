@@ -117,9 +117,9 @@ class LWFTrainer(Seq2SeqTrainer):
         return super().create_scheduler(num_training_steps, optimizer)
 
     @override
-    def _get_train_sampler(self) -> Optional["torch.utils.data.Sampler"]:
+    def _get_train_sampler(self, train_dataset) -> Optional["torch.utils.data.Sampler"]:
         if self.finetuning_args.disable_shuffling:
-            return torch.utils.data.SequentialSampler(self.train_dataset)
+            return torch.utils.data.SequentialSampler(train_dataset)
 
         return super()._get_train_sampler()
 
