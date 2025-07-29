@@ -330,6 +330,12 @@ def run_sft_lwf(
 
             debugprint(f"[rank {rank}] LWF指标添加完成，损失值: {lwf_loss}")
 
+            # Clear cached logits after training is complete to free memory
+            if hasattr(trainer, 'lwf') and trainer.lwf:
+                if is_main:
+                    logger.info("Training completed. Clearing LWF cached logits to free memory...")
+                trainer.lwf.clear_cached_logits()
+
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
         trainer.save_state()
